@@ -1,0 +1,210 @@
+/**
+ * IPC API type definitions for Electron preload bridge.
+ *
+ * These types define the interface exposed to the renderer process
+ * via contextBridge. The actual implementation lives in src/preload/index.ts.
+ *
+ * Shared between preload and renderer processes.
+ */
+
+import type {
+  AppConfig,
+  DetectedError,
+  NotificationTrigger,
+  TriggerTestResult,
+} from './notifications';
+import type { WaterfallData } from './visualization';
+import type {
+  ConversationGroup,
+  FileChangeEvent,
+  PaginatedSessionsResult,
+  Project,
+  RepositoryGroup,
+  SearchSessionsResult,
+  Session,
+  SessionDetail,
+  SessionMetrics,
+  SessionsPaginationOptions,
+  SubagentDetail,
+} from '@main/types';
+
+// =============================================================================
+// Notifications API
+// =============================================================================
+
+/**
+ * Result of notifications:get with pagination.
+ */
+interface NotificationsResult {
+  notifications: DetectedError[];
+  total: number;
+  totalCount: number;
+  unreadCount: number;
+  hasMore: boolean;
+}
+
+/**
+ * Notifications API exposed via preload.
+ * Note: Event callbacks use `unknown` types because IPC data cannot be typed at the preload layer.
+ * Consumers should cast to DetectedError or NotificationClickData as appropriate.
+ */
+export interface NotificationsAPI {
+  get: (options?: { limit?: number; offset?: number }) => Promise<NotificationsResult>;
+  markRead: (id: string) => Promise<boolean>;
+  markAllRead: () => Promise<boolean>;
+  delete: (id: string) => Promise<boolean>;
+  clear: () => Promise<boolean>;
+  getUnreadCount: () => Promise<number>;
+  onNew: (callback: (event: unknown, error: unknown) => void) => () => void;
+  onUpdated: (
+    callback: (event: unknown, payload: { total: number; unreadCount: number }) => void
+  ) => () => void;
+  onClicked: (callback: (event: unknown, data: unknown) => void) => () => void;
+}
+
+// =============================================================================
+// Config API
+// =============================================================================
+
+/**
+ * Config API exposed via preload.
+ */
+export interface ConfigAPI {
+  get: () => Promise<AppConfig>;
+  update: (section: string, data: object) => Promise<AppConfig>;
+  addIgnoreRegex: (pattern: string) => Promise<AppConfig>;
+  removeIgnoreRegex: (pattern: string) => Promise<AppConfig>;
+  addIgnoreRepository: (repositoryId: string) => Promise<AppConfig>;
+  removeIgnoreRepository: (repositoryId: string) => Promise<AppConfig>;
+  snooze: (minutes: number) => Promise<AppConfig>;
+  clearSnooze: () => Promise<AppConfig>;
+  // Trigger management methods
+  addTrigger: (trigger: Omit<NotificationTrigger, 'isBuiltin'>) => Promise<AppConfig>;
+  updateTrigger: (triggerId: string, updates: Partial<NotificationTrigger>) => Promise<AppConfig>;
+  removeTrigger: (triggerId: string) => Promise<AppConfig>;
+  getTriggers: () => Promise<NotificationTrigger[]>;
+  testTrigger: (trigger: NotificationTrigger) => Promise<TriggerTestResult>;
+  /** Opens native folder selection dialog and returns selected paths */
+  selectFolders: () => Promise<string[]>;
+  /** Opens the config JSON file in an external editor */
+  openInEditor: () => Promise<void>;
+  /** Pin a session for a project */
+  pinSession: (projectId: string, sessionId: string) => Promise<void>;
+  /** Unpin a session for a project */
+  unpinSession: (projectId: string, sessionId: string) => Promise<void>;
+}
+
+// =============================================================================
+// Session API
+// =============================================================================
+
+/**
+ * Session navigation API exposed via preload.
+ */
+export interface SessionAPI {
+  scrollToLine: (sessionId: string, lineNumber: number) => Promise<void>;
+}
+
+// =============================================================================
+// CLAUDE.md File Info
+// =============================================================================
+
+/**
+ * CLAUDE.md file information returned from reading operations.
+ */
+export interface ClaudeMdFileInfo {
+  path: string;
+  exists: boolean;
+  charCount: number;
+  estimatedTokens: number;
+}
+
+// =============================================================================
+// Main Electron API
+// =============================================================================
+
+/**
+ * Complete Electron API exposed to the renderer process via preload script.
+ */
+export interface ElectronAPI {
+  getAppVersion: () => Promise<string>;
+  getProjects: () => Promise<Project[]>;
+  getSessions: (projectId: string) => Promise<Session[]>;
+  getSessionsPaginated: (
+    projectId: string,
+    cursor: string | null,
+    limit?: number,
+    options?: SessionsPaginationOptions
+  ) => Promise<PaginatedSessionsResult>;
+  searchSessions: (
+    projectId: string,
+    query: string,
+    maxResults?: number
+  ) => Promise<SearchSessionsResult>;
+  getSessionDetail: (projectId: string, sessionId: string) => Promise<SessionDetail | null>;
+  getSessionMetrics: (projectId: string, sessionId: string) => Promise<SessionMetrics | null>;
+  getWaterfallData: (projectId: string, sessionId: string) => Promise<WaterfallData | null>;
+  getSubagentDetail: (
+    projectId: string,
+    sessionId: string,
+    subagentId: string
+  ) => Promise<SubagentDetail | null>;
+  getSessionGroups: (projectId: string, sessionId: string) => Promise<ConversationGroup[]>;
+
+  // Repository grouping (worktree support)
+  getRepositoryGroups: () => Promise<RepositoryGroup[]>;
+  getWorktreeSessions: (worktreeId: string) => Promise<Session[]>;
+
+  // Validation methods
+  validatePath: (
+    relativePath: string,
+    projectPath: string
+  ) => Promise<{ exists: boolean; isDirectory?: boolean }>;
+  validateMentions: (
+    mentions: { type: 'path'; value: string }[],
+    projectPath: string
+  ) => Promise<Record<string, boolean>>;
+
+  // CLAUDE.md reading methods
+  readClaudeMdFiles: (projectRoot: string) => Promise<Record<string, ClaudeMdFileInfo>>;
+  readDirectoryClaudeMd: (dirPath: string) => Promise<ClaudeMdFileInfo>;
+  readMentionedFile: (
+    absolutePath: string,
+    projectRoot: string,
+    maxTokens?: number
+  ) => Promise<ClaudeMdFileInfo | null>;
+
+  // Notifications API
+  notifications: NotificationsAPI;
+
+  // Config API
+  config: ConfigAPI;
+
+  // Deep link navigation
+  session: SessionAPI;
+
+  // Window zoom sync (for traffic-light-safe layout)
+  getZoomFactor: () => Promise<number>;
+  onZoomFactorChanged: (callback: (zoomFactor: number) => void) => () => void;
+
+  // File change events (real-time updates)
+  onFileChange: (callback: (event: FileChangeEvent) => void) => () => void;
+  onTodoChange: (callback: (event: FileChangeEvent) => void) => () => void;
+
+  // Shell operations
+  openPath: (
+    targetPath: string,
+    projectRoot?: string
+  ) => Promise<{ success: boolean; error?: string }>;
+  openExternal: (url: string) => Promise<{ success: boolean; error?: string }>;
+}
+
+// =============================================================================
+// Window Type Extension
+// =============================================================================
+
+declare global {
+  interface Window {
+    electronAPI: ElectronAPI;
+  }
+}

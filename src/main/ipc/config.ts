@@ -1,0 +1,628 @@
+/**
+ * IPC Handlers for App Configuration.
+ *
+ * Handlers:
+ * - config:get: Get full app configuration
+ * - config:update: Update a specific config section
+ * - config:addIgnoreRegex: Add an ignore pattern for notifications
+ * - config:removeIgnoreRegex: Remove an ignore pattern
+ * - config:addIgnoreRepository: Add a repository to ignore list
+ * - config:removeIgnoreRepository: Remove a repository from ignore list
+ * - config:snooze: Set snooze duration for notifications
+ * - config:clearSnooze: Clear the snooze timer
+ * - config:addTrigger: Add a new notification trigger
+ * - config:updateTrigger: Update an existing notification trigger
+ * - config:removeTrigger: Remove a notification trigger
+ * - config:getTriggers: Get all notification triggers
+ * - config:testTrigger: Test a trigger against historical session data
+ */
+
+import { getErrorMessage } from '@shared/utils/errorHandling';
+import { createLogger } from '@shared/utils/logger';
+import { execFile } from 'child_process';
+import { BrowserWindow, dialog, type IpcMain, type IpcMainInvokeEvent } from 'electron';
+
+import {
+  type AppConfig,
+  ConfigManager,
+  type NotificationTrigger,
+  type TriggerContentType,
+  type TriggerMatchField,
+  type TriggerMode,
+  type TriggerTokenType,
+} from '../services';
+
+import { validateConfigUpdatePayload } from './configValidation';
+import { validateTriggerId } from './guards';
+
+import type { TriggerColor } from '@shared/constants/triggerColors';
+
+const logger = createLogger('IPC:config');
+
+// Get singleton instance
+const configManager = ConfigManager.getInstance();
+
+/**
+ * Response type for config operations
+ */
+interface ConfigResult<T = void> {
+  success: boolean;
+  data?: T;
+  error?: string;
+}
+
+/**
+ * Registers all config-related IPC handlers.
+ */
+export function registerConfigHandlers(ipcMain: IpcMain): void {
+  // Get full configuration
+  ipcMain.handle('config:get', handleGetConfig);
+
+  // Update configuration section
+  ipcMain.handle('config:update', handleUpdateConfig);
+
+  // Ignore regex pattern handlers
+  ipcMain.handle('config:addIgnoreRegex', handleAddIgnoreRegex);
+  ipcMain.handle('config:removeIgnoreRegex', handleRemoveIgnoreRegex);
+
+  // Ignore repository handlers
+  ipcMain.handle('config:addIgnoreRepository', handleAddIgnoreRepository);
+  ipcMain.handle('config:removeIgnoreRepository', handleRemoveIgnoreRepository);
+
+  // Snooze handlers
+  ipcMain.handle('config:snooze', handleSnooze);
+  ipcMain.handle('config:clearSnooze', handleClearSnooze);
+
+  // Trigger management handlers
+  ipcMain.handle('config:addTrigger', handleAddTrigger);
+  ipcMain.handle('config:updateTrigger', handleUpdateTrigger);
+  ipcMain.handle('config:removeTrigger', handleRemoveTrigger);
+  ipcMain.handle('config:getTriggers', handleGetTriggers);
+  ipcMain.handle('config:testTrigger', handleTestTrigger);
+
+  // Session pin handlers
+  ipcMain.handle('config:pinSession', handlePinSession);
+  ipcMain.handle('config:unpinSession', handleUnpinSession);
+
+  // Dialog handlers
+  ipcMain.handle('config:selectFolders', handleSelectFolders);
+
+  // Editor handlers
+  ipcMain.handle('config:openInEditor', handleOpenInEditor);
+
+  logger.info('Config handlers registered (including trigger management)');
+}
+
+// =============================================================================
+// Handler Functions
+// =============================================================================
+
+/**
+ * Handler for 'config:get' IPC call.
+ * Returns the full app configuration.
+ */
+async function handleGetConfig(_event: IpcMainInvokeEvent): Promise<ConfigResult<AppConfig>> {
+  try {
+    const config = configManager.getConfig();
+    return { success: true, data: config };
+  } catch (error) {
+    logger.error('Error in config:get:', error);
+    return { success: false, error: getErrorMessage(error) };
+  }
+}
+
+/**
+ * Handler for 'config:update' IPC call.
+ * Updates a specific section of the configuration.
+ * Returns the full updated config.
+ */
+async function handleUpdateConfig(
+  _event: IpcMainInvokeEvent,
+  section: unknown,
+  data: unknown
+): Promise<ConfigResult<AppConfig>> {
+  try {
+    const validation = validateConfigUpdatePayload(section, data);
+    if (!validation.valid) {
+      return { success: false, error: validation.error };
+    }
+
+    configManager.updateConfig(validation.section, validation.data);
+    const updatedConfig = configManager.getConfig();
+    return { success: true, data: updatedConfig };
+  } catch (error) {
+    logger.error('Error in config:update:', error);
+    return { success: false, error: getErrorMessage(error) };
+  }
+}
+
+/**
+ * Handler for 'config:addIgnoreRegex' IPC call.
+ * Adds a regex pattern to the notification ignore list.
+ */
+async function handleAddIgnoreRegex(
+  _event: IpcMainInvokeEvent,
+  pattern: string
+): Promise<ConfigResult> {
+  try {
+    if (!pattern || typeof pattern !== 'string') {
+      return { success: false, error: 'Pattern is required and must be a string' };
+    }
+
+    // Validate that the pattern is a valid regex
+    try {
+      new RegExp(pattern);
+    } catch {
+      return { success: false, error: 'Invalid regex pattern' };
+    }
+
+    configManager.addIgnoreRegex(pattern);
+    return { success: true };
+  } catch (error) {
+    logger.error('Error in config:addIgnoreRegex:', error);
+    return { success: false, error: getErrorMessage(error) };
+  }
+}
+
+/**
+ * Handler for 'config:removeIgnoreRegex' IPC call.
+ * Removes a regex pattern from the notification ignore list.
+ */
+async function handleRemoveIgnoreRegex(
+  _event: IpcMainInvokeEvent,
+  pattern: string
+): Promise<ConfigResult> {
+  try {
+    if (!pattern || typeof pattern !== 'string') {
+      return { success: false, error: 'Pattern is required and must be a string' };
+    }
+
+    configManager.removeIgnoreRegex(pattern);
+    return { success: true };
+  } catch (error) {
+    logger.error('Error in config:removeIgnoreRegex:', error);
+    return { success: false, error: getErrorMessage(error) };
+  }
+}
+
+/**
+ * Handler for 'config:addIgnoreRepository' IPC call.
+ * Adds a repository to the notification ignore list.
+ */
+async function handleAddIgnoreRepository(
+  _event: IpcMainInvokeEvent,
+  repositoryId: string
+): Promise<ConfigResult> {
+  try {
+    if (!repositoryId || typeof repositoryId !== 'string') {
+      return { success: false, error: 'Repository ID is required and must be a string' };
+    }
+
+    configManager.addIgnoreRepository(repositoryId);
+    return { success: true };
+  } catch (error) {
+    logger.error('Error in config:addIgnoreRepository:', error);
+    return { success: false, error: getErrorMessage(error) };
+  }
+}
+
+/**
+ * Handler for 'config:removeIgnoreRepository' IPC call.
+ * Removes a repository from the notification ignore list.
+ */
+async function handleRemoveIgnoreRepository(
+  _event: IpcMainInvokeEvent,
+  repositoryId: string
+): Promise<ConfigResult> {
+  try {
+    if (!repositoryId || typeof repositoryId !== 'string') {
+      return { success: false, error: 'Repository ID is required and must be a string' };
+    }
+
+    configManager.removeIgnoreRepository(repositoryId);
+    return { success: true };
+  } catch (error) {
+    logger.error('Error in config:removeIgnoreRepository:', error);
+    return { success: false, error: getErrorMessage(error) };
+  }
+}
+
+/**
+ * Handler for 'config:snooze' IPC call.
+ * Sets the snooze timer for notifications.
+ */
+async function handleSnooze(_event: IpcMainInvokeEvent, minutes: number): Promise<ConfigResult> {
+  try {
+    if (typeof minutes !== 'number' || minutes <= 0 || minutes > 24 * 60) {
+      return { success: false, error: 'Minutes must be a positive number' };
+    }
+
+    configManager.setSnooze(minutes);
+    return { success: true };
+  } catch (error) {
+    logger.error('Error in config:snooze:', error);
+    return { success: false, error: getErrorMessage(error) };
+  }
+}
+
+/**
+ * Handler for 'config:clearSnooze' IPC call.
+ * Clears the snooze timer.
+ */
+async function handleClearSnooze(_event: IpcMainInvokeEvent): Promise<ConfigResult> {
+  try {
+    configManager.clearSnooze();
+    return { success: true };
+  } catch (error) {
+    logger.error('Error in config:clearSnooze:', error);
+    return { success: false, error: getErrorMessage(error) };
+  }
+}
+
+/**
+ * Handler for 'config:addTrigger' - Adds a new notification trigger.
+ */
+async function handleAddTrigger(
+  _event: IpcMainInvokeEvent,
+  trigger: {
+    id: string;
+    name: string;
+    enabled: boolean;
+    contentType: string;
+    mode?: TriggerMode;
+    requireError?: boolean;
+    toolName?: string;
+    matchField?: string;
+    matchPattern?: string;
+    ignorePatterns?: string[];
+    tokenThreshold?: number;
+    tokenType?: TriggerTokenType;
+    repositoryIds?: string[];
+    color?: string;
+  }
+): Promise<ConfigResult> {
+  try {
+    if (!trigger.id || !trigger.name || !trigger.contentType) {
+      return {
+        success: false,
+        error: 'Trigger must have id, name, and contentType',
+      };
+    }
+
+    configManager.addTrigger({
+      id: trigger.id,
+      name: trigger.name,
+      enabled: trigger.enabled,
+      contentType: trigger.contentType as TriggerContentType,
+      mode: trigger.mode ?? (trigger.requireError ? 'error_status' : 'content_match'),
+      requireError: trigger.requireError,
+      toolName: trigger.toolName,
+      matchField: trigger.matchField as TriggerMatchField | undefined,
+      matchPattern: trigger.matchPattern,
+      ignorePatterns: trigger.ignorePatterns,
+      tokenThreshold: trigger.tokenThreshold,
+      tokenType: trigger.tokenType,
+      repositoryIds: trigger.repositoryIds,
+      color: trigger.color as TriggerColor | undefined,
+      isBuiltin: false,
+    });
+
+    return { success: true };
+  } catch (error) {
+    logger.error('Error in config:addTrigger:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to add trigger',
+    };
+  }
+}
+
+/**
+ * Handler for 'config:updateTrigger' - Updates an existing notification trigger.
+ */
+async function handleUpdateTrigger(
+  _event: IpcMainInvokeEvent,
+  triggerId: string,
+  updates: Partial<{
+    name: string;
+    enabled: boolean;
+    contentType: string;
+    requireError: boolean;
+    toolName: string;
+    matchField: string;
+    matchPattern: string;
+    ignorePatterns: string[];
+    mode: TriggerMode;
+    tokenThreshold: number;
+    tokenType: TriggerTokenType;
+    repositoryIds: string[];
+    color: string;
+  }>
+): Promise<ConfigResult> {
+  try {
+    const validatedTriggerId = validateTriggerId(triggerId);
+    if (!validatedTriggerId.valid) {
+      return {
+        success: false,
+        error: validatedTriggerId.error ?? 'Trigger ID is required',
+      };
+    }
+
+    configManager.updateTrigger(validatedTriggerId.value!, updates as Partial<NotificationTrigger>);
+
+    return { success: true };
+  } catch (error) {
+    logger.error('Error in config:updateTrigger:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to update trigger',
+    };
+  }
+}
+
+/**
+ * Handler for 'config:removeTrigger' - Removes a notification trigger.
+ */
+async function handleRemoveTrigger(
+  _event: IpcMainInvokeEvent,
+  triggerId: string
+): Promise<ConfigResult> {
+  try {
+    const validatedTriggerId = validateTriggerId(triggerId);
+    if (!validatedTriggerId.valid) {
+      return {
+        success: false,
+        error: validatedTriggerId.error ?? 'Trigger ID is required',
+      };
+    }
+
+    configManager.removeTrigger(validatedTriggerId.value!);
+
+    return { success: true };
+  } catch (error) {
+    logger.error('Error in config:removeTrigger:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to remove trigger',
+    };
+  }
+}
+
+/**
+ * Handler for 'config:getTriggers' - Gets all notification triggers.
+ */
+async function handleGetTriggers(
+  _event: IpcMainInvokeEvent
+): Promise<ConfigResult<NotificationTrigger[]>> {
+  try {
+    const triggers = configManager.getTriggers();
+
+    return { success: true, data: triggers };
+  } catch (error) {
+    logger.error('Error in config:getTriggers:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to get triggers',
+    };
+  }
+}
+
+/**
+ * Handler for 'config:testTrigger' - Tests a trigger against historical session data.
+ * Returns errors that would have been detected by the trigger.
+ *
+ * Safety: Results are truncated if:
+ * - More than 10,000 total matches found
+ * - More than 100 sessions scanned
+ * - Test runs longer than 30 seconds
+ */
+async function handleTestTrigger(
+  _event: IpcMainInvokeEvent,
+  trigger: NotificationTrigger
+): Promise<
+  ConfigResult<{
+    totalCount: number;
+    errors: {
+      id: string;
+      sessionId: string;
+      projectId: string;
+      message: string;
+      timestamp: number;
+      source: string;
+      toolUseId?: string;
+      subagentId?: string;
+      lineNumber?: number;
+      context: { projectName: string };
+    }[];
+    /** True if results were truncated due to safety limits */
+    truncated?: boolean;
+  }>
+> {
+  try {
+    const { errorDetector } = await import('../services');
+    const result = await errorDetector.testTrigger(trigger, 50);
+
+    // Map the DetectedError objects to the format expected by the renderer
+    // Include toolUseId, subagentId, and lineNumber for deep linking to exact error location
+    const errors = result.errors.map((error) => ({
+      id: error.id,
+      sessionId: error.sessionId,
+      projectId: error.projectId,
+      message: error.message,
+      timestamp: error.timestamp,
+      source: error.source,
+      toolUseId: error.toolUseId,
+      subagentId: error.subagentId,
+      lineNumber: error.lineNumber,
+      context: { projectName: error.context.projectName },
+    }));
+
+    return {
+      success: true,
+      data: { totalCount: result.totalCount, errors, truncated: result.truncated },
+    };
+  } catch (error) {
+    logger.error('Error in config:testTrigger:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to test trigger',
+    };
+  }
+}
+
+/**
+ * Handler for 'config:pinSession' - Pins a session for a project.
+ */
+async function handlePinSession(
+  _event: IpcMainInvokeEvent,
+  projectId: string,
+  sessionId: string
+): Promise<ConfigResult> {
+  try {
+    if (!projectId || typeof projectId !== 'string') {
+      return { success: false, error: 'Project ID is required and must be a string' };
+    }
+    if (!sessionId || typeof sessionId !== 'string') {
+      return { success: false, error: 'Session ID is required and must be a string' };
+    }
+
+    configManager.pinSession(projectId, sessionId);
+    return { success: true };
+  } catch (error) {
+    logger.error('Error in config:pinSession:', error);
+    return { success: false, error: getErrorMessage(error) };
+  }
+}
+
+/**
+ * Handler for 'config:unpinSession' - Unpins a session for a project.
+ */
+async function handleUnpinSession(
+  _event: IpcMainInvokeEvent,
+  projectId: string,
+  sessionId: string
+): Promise<ConfigResult> {
+  try {
+    if (!projectId || typeof projectId !== 'string') {
+      return { success: false, error: 'Project ID is required and must be a string' };
+    }
+    if (!sessionId || typeof sessionId !== 'string') {
+      return { success: false, error: 'Session ID is required and must be a string' };
+    }
+
+    configManager.unpinSession(projectId, sessionId);
+    return { success: true };
+  } catch (error) {
+    logger.error('Error in config:unpinSession:', error);
+    return { success: false, error: getErrorMessage(error) };
+  }
+}
+
+/**
+ * Handler for 'config:openInEditor' - Opens the config JSON file in an external editor.
+ * Tries editors in order: $VISUAL, $EDITOR, cursor, code, then falls back to system open.
+ */
+async function handleOpenInEditor(_event: IpcMainInvokeEvent): Promise<ConfigResult> {
+  try {
+    const configPath = configManager.getConfigPath();
+
+    // Try editors in priority order
+    const editors: string[] = [];
+    if (process.env.VISUAL) editors.push(process.env.VISUAL);
+    if (process.env.EDITOR) editors.push(process.env.EDITOR);
+    editors.push('cursor', 'code', 'subl', 'zed');
+
+    for (const editor of editors) {
+      try {
+        await new Promise<void>((resolve, reject) => {
+          const child = execFile(editor, [configPath], { timeout: 5000 });
+          // If the process spawns successfully, resolve after a short delay
+          // (editors typically fork and the parent exits quickly)
+          const timer = setTimeout(() => resolve(), 500);
+          child.on('error', (err) => {
+            clearTimeout(timer);
+            reject(err);
+          });
+        });
+        return { success: true };
+      } catch {
+        // Editor not found, try next
+        continue;
+      }
+    }
+
+    // Fallback: open with system default
+    const { shell } = await import('electron');
+    const errorMessage = await shell.openPath(configPath);
+    if (errorMessage) {
+      return { success: false, error: errorMessage };
+    }
+    return { success: true };
+  } catch (error) {
+    logger.error('Error in config:openInEditor:', error);
+    return { success: false, error: getErrorMessage(error) };
+  }
+}
+
+/**
+ * Handler for 'config:selectFolders' - Opens native folder selection dialog.
+ * Allows users to select one or more folders for trigger project scope.
+ */
+async function handleSelectFolders(_event: IpcMainInvokeEvent): Promise<ConfigResult<string[]>> {
+  try {
+    // Get the focused window for proper dialog parenting
+    const focusedWindow = BrowserWindow.getFocusedWindow();
+
+    // dialog.showOpenDialog accepts either (options) or (window, options)
+    const dialogOptions: Electron.OpenDialogOptions = {
+      properties: ['openDirectory', 'multiSelections'],
+      title: 'Select Project Folders',
+      buttonLabel: 'Select',
+    };
+
+    const result = focusedWindow
+      ? await dialog.showOpenDialog(focusedWindow, dialogOptions)
+      : await dialog.showOpenDialog(dialogOptions);
+
+    if (result.canceled) {
+      return { success: true, data: [] };
+    }
+
+    return { success: true, data: result.filePaths };
+  } catch (error) {
+    logger.error('Error in config:selectFolders:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to open folder dialog',
+    };
+  }
+}
+
+// =============================================================================
+// Cleanup
+// =============================================================================
+
+/**
+ * Removes all config-related IPC handlers.
+ * Should be called when shutting down.
+ */
+export function removeConfigHandlers(ipcMain: IpcMain): void {
+  ipcMain.removeHandler('config:get');
+  ipcMain.removeHandler('config:update');
+  ipcMain.removeHandler('config:addIgnoreRegex');
+  ipcMain.removeHandler('config:removeIgnoreRegex');
+  ipcMain.removeHandler('config:addIgnoreRepository');
+  ipcMain.removeHandler('config:removeIgnoreRepository');
+  ipcMain.removeHandler('config:snooze');
+  ipcMain.removeHandler('config:clearSnooze');
+  ipcMain.removeHandler('config:addTrigger');
+  ipcMain.removeHandler('config:updateTrigger');
+  ipcMain.removeHandler('config:removeTrigger');
+  ipcMain.removeHandler('config:getTriggers');
+  ipcMain.removeHandler('config:testTrigger');
+  ipcMain.removeHandler('config:pinSession');
+  ipcMain.removeHandler('config:unpinSession');
+  ipcMain.removeHandler('config:selectFolders');
+  ipcMain.removeHandler('config:openInEditor');
+  logger.info('Config handlers removed');
+}

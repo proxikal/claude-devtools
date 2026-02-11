@@ -1,0 +1,274 @@
+/**
+ * Session slice - manages session list state and pagination.
+ */
+
+import { createLogger } from '@shared/utils/logger';
+
+import type { AppState } from '../types';
+import type { Session } from '@renderer/types/data';
+import type { StateCreator } from 'zustand';
+
+const logger = createLogger('Store:session');
+
+/**
+ * Tracks the latest in-place refresh generation per project.
+ * Used to guarantee last-write-wins under rapid file change events.
+ */
+const projectRefreshGeneration = new Map<string, number>();
+
+// =============================================================================
+// Slice Interface
+// =============================================================================
+
+export interface SessionSlice {
+  // State
+  sessions: Session[];
+  selectedSessionId: string | null;
+  sessionsLoading: boolean;
+  sessionsError: string | null;
+  // Pagination state
+  sessionsCursor: string | null;
+  sessionsHasMore: boolean;
+  sessionsTotalCount: number;
+  sessionsLoadingMore: boolean;
+  // Pinned sessions
+  pinnedSessionIds: string[];
+
+  // Actions
+  fetchSessions: (projectId: string) => Promise<void>;
+  fetchSessionsInitial: (projectId: string) => Promise<void>;
+  fetchSessionsMore: () => Promise<void>;
+  resetSessionsPagination: () => void;
+  selectSession: (id: string) => void;
+  clearSelection: () => void;
+  /** Refresh sessions list without loading states - for real-time updates */
+  refreshSessionsInPlace: (projectId: string) => Promise<void>;
+  /** Toggle pin/unpin for a session */
+  togglePinSession: (sessionId: string) => Promise<void>;
+  /** Load pinned sessions from config for current project */
+  loadPinnedSessions: () => Promise<void>;
+}
+
+// =============================================================================
+// Slice Creator
+// =============================================================================
+
+export const createSessionSlice: StateCreator<AppState, [], [], SessionSlice> = (set, get) => ({
+  // Initial state
+  sessions: [],
+  selectedSessionId: null,
+  sessionsLoading: false,
+  sessionsError: null,
+  // Pagination state
+  sessionsCursor: null,
+  sessionsHasMore: false,
+  sessionsTotalCount: 0,
+  sessionsLoadingMore: false,
+  // Pinned sessions
+  pinnedSessionIds: [],
+
+  // Fetch sessions for a specific project (legacy - not paginated)
+  fetchSessions: async (projectId: string) => {
+    set({ sessionsLoading: true, sessionsError: null });
+    try {
+      const sessions = await window.electronAPI.getSessions(projectId);
+      // Sort by createdAt (descending)
+      const sorted = [...sessions].sort((a, b) => b.createdAt - a.createdAt);
+      set({ sessions: sorted, sessionsLoading: false });
+    } catch (error) {
+      set({
+        sessionsError: error instanceof Error ? error.message : 'Failed to fetch sessions',
+        sessionsLoading: false,
+      });
+    }
+  },
+
+  // Fetch initial page of sessions (paginated)
+  fetchSessionsInitial: async (projectId: string) => {
+    set({
+      sessionsLoading: true,
+      sessionsError: null,
+      sessions: [],
+      sessionsCursor: null,
+      sessionsHasMore: false,
+      sessionsTotalCount: 0,
+    });
+    try {
+      const result = await window.electronAPI.getSessionsPaginated(projectId, null, 20, {
+        includeTotalCount: false,
+        prefilterAll: false,
+      });
+      set({
+        sessions: result.sessions,
+        sessionsCursor: result.nextCursor,
+        sessionsHasMore: result.hasMore,
+        sessionsTotalCount: result.totalCount,
+        sessionsLoading: false,
+      });
+
+      // Load pinned sessions after fetching session list
+      void get().loadPinnedSessions();
+    } catch (error) {
+      set({
+        sessionsError: error instanceof Error ? error.message : 'Failed to fetch sessions',
+        sessionsLoading: false,
+      });
+    }
+  },
+
+  // Fetch more sessions (next page)
+  fetchSessionsMore: async () => {
+    const state = get();
+    const { selectedProjectId, sessionsCursor, sessionsHasMore, sessionsLoadingMore } = state;
+
+    // Guard: don't fetch if already loading, no more pages, or no project
+    if (!selectedProjectId || !sessionsHasMore || sessionsLoadingMore || !sessionsCursor) {
+      return;
+    }
+
+    set({ sessionsLoadingMore: true });
+    try {
+      const result = await window.electronAPI.getSessionsPaginated(
+        selectedProjectId,
+        sessionsCursor,
+        20,
+        {
+          includeTotalCount: false,
+          prefilterAll: false,
+        }
+      );
+      set((prevState) => ({
+        sessions: [...prevState.sessions, ...result.sessions],
+        sessionsCursor: result.nextCursor,
+        sessionsHasMore: result.hasMore,
+        sessionsLoadingMore: false,
+      }));
+    } catch (error) {
+      set({
+        sessionsError: error instanceof Error ? error.message : 'Failed to fetch more sessions',
+        sessionsLoadingMore: false,
+      });
+    }
+  },
+
+  // Reset pagination state
+  resetSessionsPagination: () => {
+    set({
+      sessions: [],
+      sessionsCursor: null,
+      sessionsHasMore: false,
+      sessionsTotalCount: 0,
+      sessionsLoadingMore: false,
+      sessionsError: null,
+    });
+  },
+
+  // Select a session and fetch its detail
+  selectSession: (id: string) => {
+    set({
+      selectedSessionId: id,
+      sessionDetail: null,
+      sessionContextStats: null,
+      sessionDetailError: null,
+    });
+
+    // Fetch detail for this session, passing the active tabId for per-tab data
+    const state = get();
+    const projectId = state.selectedProjectId;
+    if (projectId) {
+      const activeTabId = state.activeTabId ?? undefined;
+      void state.fetchSessionDetail(projectId, id, activeTabId);
+    } else {
+      logger.warn('Cannot fetch session detail: no project selected');
+    }
+  },
+
+  // Clear all selections
+  clearSelection: () => {
+    set({
+      selectedProjectId: null,
+      selectedSessionId: null,
+      sessions: [],
+      sessionDetail: null,
+      sessionContextStats: null,
+    });
+  },
+
+  // Refresh sessions list in place without loading states
+  // Used for real-time updates when new sessions are added
+  refreshSessionsInPlace: async (projectId: string) => {
+    const currentState = get();
+
+    // Only refresh if viewing this project
+    if (currentState.selectedProjectId !== projectId) {
+      return;
+    }
+
+    const generation = (projectRefreshGeneration.get(projectId) ?? 0) + 1;
+    projectRefreshGeneration.set(projectId, generation);
+
+    try {
+      const result = await window.electronAPI.getSessionsPaginated(projectId, null, 20, {
+        includeTotalCount: false,
+        prefilterAll: false,
+      });
+
+      // Drop stale responses from older in-flight refreshes
+      if (projectRefreshGeneration.get(projectId) !== generation) {
+        return;
+      }
+
+      // Update sessions without loading state
+      set({
+        sessions: result.sessions,
+        sessionsCursor: result.nextCursor,
+        sessionsHasMore: result.hasMore,
+        sessionsTotalCount: result.totalCount,
+        // Don't touch sessionsLoading - keep it as-is
+      });
+    } catch (error) {
+      logger.error('refreshSessionsInPlace error:', error);
+      // Don't set error state - this is a background refresh
+    }
+  },
+
+  // Toggle pin/unpin for a session
+  togglePinSession: async (sessionId: string) => {
+    const state = get();
+    const projectId = state.selectedProjectId;
+    if (!projectId) return;
+
+    const isPinned = state.pinnedSessionIds.includes(sessionId);
+
+    try {
+      if (isPinned) {
+        await window.electronAPI.config.unpinSession(projectId, sessionId);
+        set({ pinnedSessionIds: state.pinnedSessionIds.filter((id) => id !== sessionId) });
+      } else {
+        await window.electronAPI.config.pinSession(projectId, sessionId);
+        set({ pinnedSessionIds: [sessionId, ...state.pinnedSessionIds] });
+      }
+    } catch (error) {
+      logger.error('togglePinSession error:', error);
+    }
+  },
+
+  // Load pinned sessions from config for current project
+  loadPinnedSessions: async () => {
+    const state = get();
+    const projectId = state.selectedProjectId;
+    if (!projectId) {
+      set({ pinnedSessionIds: [] });
+      return;
+    }
+
+    try {
+      const config = await window.electronAPI.config.get();
+      const pins = config.sessions?.pinnedSessions?.[projectId] ?? [];
+      set({ pinnedSessionIds: pins.map((p) => p.sessionId) });
+    } catch (error) {
+      logger.error('loadPinnedSessions error:', error);
+      set({ pinnedSessionIds: [] });
+    }
+  },
+});

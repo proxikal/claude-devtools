@@ -1,0 +1,41 @@
+appId: com.claudecode.context
+productName: Claude Code Context
+
+directories:
+  output: release
+
+files:
+  - out/renderer/**
+  - dist-electron/**
+  - package.json
+
+asar: true
+
+extraMetadata:
+  main: dist-electron/main/index.js
+
+mac:
+  category: public.app-category.developer-tools
+  target:
+    - dmg
+    - zip
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  icon: resources/icons/mac/icon.icns
+
+dmg:
+  sign: false
+
+win:
+  target:
+    - nsis
+  icon: resources/icons/win/icon.ico
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+
+publish:
+  - provider: github
+    releaseType: draft

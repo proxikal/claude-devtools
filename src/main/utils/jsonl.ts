@@ -1,0 +1,473 @@
+/**
+ * Utilities for parsing JSONL (JSON Lines) files used by Claude Code sessions.
+ *
+ * JSONL format: One JSON object per line
+ * - Each line is a complete, valid JSON object
+ * - Lines are separated by newline characters
+ * - Empty lines should be skipped
+ */
+
+import { isCommandOutputContent, sanitizeDisplayContent } from '@shared/utils/contentSanitizer';
+import { createLogger } from '@shared/utils/logger';
+import * as fs from 'fs';
+import * as readline from 'readline';
+
+const logger = createLogger('Util:jsonl');
+
+import {
+  type ChatHistoryEntry,
+  type ContentBlock,
+  EMPTY_METRICS,
+  isConversationalEntry,
+  isParsedUserChunkMessage,
+  isTextContent,
+  type MessageType,
+  type ParsedMessage,
+  type SessionMetrics,
+  type TokenUsage,
+  type ToolCall,
+} from '../types';
+
+// Import from extracted modules
+import { extractToolCalls, extractToolResults } from './toolExtraction';
+
+// Re-export for backwards compatibility
+export { extractCwd } from './metadataExtraction';
+export { checkMessagesOngoing } from './sessionStateDetection';
+
+// =============================================================================
+// Core Parsing Functions
+// =============================================================================
+
+/**
+ * Parse a JSONL file line by line using streaming.
+ * This avoids loading the entire file into memory.
+ */
+export async function parseJsonlFile(filePath: string): Promise<ParsedMessage[]> {
+  const messages: ParsedMessage[] = [];
+
+  if (!fs.existsSync(filePath)) {
+    return messages;
+  }
+
+  const fileStream = fs.createReadStream(filePath, { encoding: 'utf8' });
+  const rl = readline.createInterface({
+    input: fileStream,
+    crlfDelay: Infinity,
+  });
+
+  for await (const line of rl) {
+    if (!line.trim()) continue;
+
+    try {
+      const parsed = parseJsonlLine(line);
+      if (parsed) {
+        messages.push(parsed);
+      }
+    } catch (error) {
+      logger.error(`Error parsing line in ${filePath}:`, error);
+    }
+  }
+
+  return messages;
+}
+
+/**
+ * Parse a single JSONL line into a ParsedMessage.
+ * Returns null for invalid/unsupported lines.
+ */
+export function parseJsonlLine(line: string): ParsedMessage | null {
+  if (!line.trim()) {
+    return null;
+  }
+
+  const entry = JSON.parse(line) as ChatHistoryEntry;
+  return parseChatHistoryEntry(entry);
+}
+
+// =============================================================================
+// Entry Parsing
+// =============================================================================
+
+/**
+ * Parse a single JSONL entry into a ParsedMessage.
+ */
+function parseChatHistoryEntry(entry: ChatHistoryEntry): ParsedMessage | null {
+  // Skip entries without uuid (usually metadata)
+  if (!entry.uuid) {
+    return null;
+  }
+
+  const type = parseMessageType(entry.type);
+  if (!type) {
+    return null;
+  }
+
+  // Handle different entry types
+  let content: string | ContentBlock[] = '';
+  let role: string | undefined;
+  let usage: TokenUsage | undefined;
+  let model: string | undefined;
+  let cwd: string | undefined;
+  let gitBranch: string | undefined;
+  let agentId: string | undefined;
+  let isSidechain = false;
+  let isMeta = false;
+  let userType: string | undefined;
+  let sourceToolUseID: string | undefined;
+  let sourceToolAssistantUUID: string | undefined;
+  let toolUseResult: Record<string, unknown> | undefined;
+  let parentUuid: string | null = null;
+
+  // Extract properties based on entry type
+  let isCompactSummary = false;
+  if (isConversationalEntry(entry)) {
+    // Common properties from ConversationalEntry base
+    cwd = entry.cwd;
+    gitBranch = entry.gitBranch;
+    isSidechain = entry.isSidechain ?? false;
+    userType = entry.userType;
+    parentUuid = entry.parentUuid ?? null;
+
+    // Type-specific properties
+    if (entry.type === 'user') {
+      content = entry.message.content ?? '';
+      role = entry.message.role;
+      agentId = entry.agentId;
+      isMeta = entry.isMeta ?? false;
+      sourceToolUseID = entry.sourceToolUseID;
+      sourceToolAssistantUUID = entry.sourceToolAssistantUUID;
+      toolUseResult = entry.toolUseResult;
+      // Check for isCompactSummary on user entry (may exist on raw JSONL)
+      isCompactSummary = 'isCompactSummary' in entry && entry.isCompactSummary === true;
+    } else if (entry.type === 'assistant') {
+      content = entry.message.content;
+      role = entry.message.role;
+      usage = entry.message.usage;
+      model = entry.message.model;
+      agentId = entry.agentId;
+    } else if (entry.type === 'system') {
+      isMeta = entry.isMeta ?? false;
+    }
+  }
+
+  // Extract tool calls and results
+  const toolCalls = extractToolCalls(content);
+  const toolResultsList = extractToolResults(content);
+
+  return {
+    uuid: entry.uuid,
+    parentUuid,
+    type,
+    timestamp: entry.timestamp ? new Date(entry.timestamp) : new Date(),
+    role,
+    content,
+    usage,
+    model,
+    // Metadata
+    cwd,
+    gitBranch,
+    agentId,
+    isSidechain,
+    isMeta,
+    userType,
+    isCompactSummary,
+    // Tool info
+    toolCalls,
+    toolResults: toolResultsList,
+    sourceToolUseID,
+    sourceToolAssistantUUID,
+    toolUseResult,
+  };
+}
+
+/**
+ * Parse message type string into enum.
+ */
+function parseMessageType(type?: string): MessageType | null {
+  switch (type) {
+    case 'user':
+      return 'user';
+    case 'assistant':
+      return 'assistant';
+    case 'system':
+      return 'system';
+    case 'summary':
+      return 'summary';
+    case 'file-history-snapshot':
+      return 'file-history-snapshot';
+    case 'queue-operation':
+      return 'queue-operation';
+    default:
+      // Unknown types are skipped
+      return null;
+  }
+}
+
+// =============================================================================
+// Metrics Calculation
+// =============================================================================
+
+/**
+ * Calculate session metrics from parsed messages.
+ */
+export function calculateMetrics(messages: ParsedMessage[]): SessionMetrics {
+  if (messages.length === 0) {
+    return { ...EMPTY_METRICS };
+  }
+
+  let inputTokens = 0;
+  let outputTokens = 0;
+  let cacheReadTokens = 0;
+  let cacheCreationTokens = 0;
+  const costUsd = 0;
+
+  // Get timestamps for duration (loop instead of Math.min/max spread to avoid stack overflow on large sessions)
+  const timestamps = messages.map((m) => m.timestamp.getTime()).filter((t) => !isNaN(t));
+
+  let minTime = 0;
+  let maxTime = 0;
+  if (timestamps.length > 0) {
+    minTime = timestamps[0];
+    maxTime = timestamps[0];
+    for (let i = 1; i < timestamps.length; i++) {
+      if (timestamps[i] < minTime) minTime = timestamps[i];
+      if (timestamps[i] > maxTime) maxTime = timestamps[i];
+    }
+  }
+
+  for (const msg of messages) {
+    if (msg.usage) {
+      inputTokens += msg.usage.input_tokens ?? 0;
+      outputTokens += msg.usage.output_tokens ?? 0;
+      cacheReadTokens += msg.usage.cache_read_input_tokens ?? 0;
+      cacheCreationTokens += msg.usage.cache_creation_input_tokens ?? 0;
+    }
+  }
+
+  return {
+    durationMs: maxTime - minTime,
+    totalTokens: inputTokens + cacheCreationTokens + cacheReadTokens + outputTokens,
+    inputTokens,
+    outputTokens,
+    cacheReadTokens,
+    cacheCreationTokens,
+    messageCount: messages.length,
+    costUsd: costUsd > 0 ? costUsd : undefined,
+  };
+}
+
+// =============================================================================
+// Utility Functions
+// =============================================================================
+
+/**
+ * Extract text content from a message for display.
+ * This version applies content sanitization to filter XML-like tags.
+ */
+export function extractTextContent(message: ParsedMessage): string {
+  let rawText: string;
+
+  if (typeof message.content === 'string') {
+    rawText = message.content;
+  } else {
+    rawText = message.content
+      .filter(isTextContent)
+      .map((block) => block.text)
+      .join('\n');
+  }
+
+  // Apply sanitization to remove XML-like tags for display
+  return sanitizeDisplayContent(rawText);
+}
+
+/**
+ * Get all Task calls from a list of messages.
+ */
+export function getTaskCalls(messages: ParsedMessage[]): ToolCall[] {
+  return messages.flatMap((m) => m.toolCalls.filter((tc) => tc.isTask));
+}
+
+export interface SessionFileMetadata {
+  firstUserMessage: { text: string; timestamp: string } | null;
+  messageCount: number;
+  isOngoing: boolean;
+  gitBranch: string | null;
+}
+
+/**
+ * Analyze key session metadata in a single streaming pass.
+ * This avoids multiple file scans when listing sessions.
+ */
+export async function analyzeSessionFileMetadata(filePath: string): Promise<SessionFileMetadata> {
+  if (!fs.existsSync(filePath)) {
+    return {
+      firstUserMessage: null,
+      messageCount: 0,
+      isOngoing: false,
+      gitBranch: null,
+    };
+  }
+
+  const fileStream = fs.createReadStream(filePath, { encoding: 'utf8' });
+  const rl = readline.createInterface({
+    input: fileStream,
+    crlfDelay: Infinity,
+  });
+
+  let firstUserMessage: { text: string; timestamp: string } | null = null;
+  let firstCommandMessage: { text: string; timestamp: string } | null = null;
+  let messageCount = 0;
+  let gitBranch: string | null = null;
+
+  let activityIndex = 0;
+  let lastEndingIndex = -1;
+  let hasAnyOngoingActivity = false;
+  let hasActivityAfterLastEnding = false;
+  // Track tool_use IDs that are shutdown responses so their tool_results are also ending events
+  const shutdownToolIds = new Set<string>();
+
+  for await (const line of rl) {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      continue;
+    }
+
+    let entry: ChatHistoryEntry;
+    try {
+      entry = JSON.parse(trimmed) as ChatHistoryEntry;
+    } catch {
+      continue;
+    }
+
+    const parsed = parseChatHistoryEntry(entry);
+    if (!parsed) {
+      continue;
+    }
+
+    if (isParsedUserChunkMessage(parsed)) {
+      messageCount++;
+    }
+
+    if (!gitBranch && 'gitBranch' in entry && entry.gitBranch) {
+      gitBranch = entry.gitBranch;
+    }
+
+    if (!firstUserMessage && entry.type === 'user') {
+      const content = entry.message?.content;
+      if (typeof content === 'string') {
+        if (isCommandOutputContent(content)) {
+          // Skip
+        } else if (content.startsWith('[Request interrupted by user')) {
+          // Skip interruption messages
+        } else if (content.startsWith('<command-name>')) {
+          if (!firstCommandMessage) {
+            const commandMatch = /<command-name>\/([^<]+)<\/command-name>/.exec(content);
+            const commandName = commandMatch ? `/${commandMatch[1]}` : '/command';
+            firstCommandMessage = {
+              text: commandName,
+              timestamp: entry.timestamp ?? new Date().toISOString(),
+            };
+          }
+        } else {
+          const sanitized = sanitizeDisplayContent(content);
+          if (sanitized.length > 0) {
+            firstUserMessage = {
+              text: sanitized.substring(0, 500),
+              timestamp: entry.timestamp ?? new Date().toISOString(),
+            };
+          }
+        }
+      } else if (Array.isArray(content)) {
+        const textContent = content
+          .filter(isTextContent)
+          .map((b) => b.text)
+          .join(' ');
+        if (
+          textContent &&
+          !textContent.startsWith('<command-name>') &&
+          !textContent.startsWith('[Request interrupted by user')
+        ) {
+          const sanitized = sanitizeDisplayContent(textContent);
+          if (sanitized.length > 0) {
+            firstUserMessage = {
+              text: sanitized.substring(0, 500),
+              timestamp: entry.timestamp ?? new Date().toISOString(),
+            };
+          }
+        }
+      }
+    }
+
+    // Ongoing detection with one-pass activity tracking.
+    if (parsed.type === 'assistant' && Array.isArray(parsed.content)) {
+      for (const block of parsed.content) {
+        if (block.type === 'thinking' && block.thinking) {
+          hasAnyOngoingActivity = true;
+          if (lastEndingIndex >= 0) {
+            hasActivityAfterLastEnding = true;
+          }
+          activityIndex++;
+        } else if (block.type === 'tool_use' && block.id) {
+          if (block.name === 'ExitPlanMode') {
+            lastEndingIndex = activityIndex++;
+            hasActivityAfterLastEnding = false;
+          } else if (
+            block.name === 'SendMessage' &&
+            block.input?.type === 'shutdown_response' &&
+            block.input?.approve === true
+          ) {
+            // SendMessage shutdown_response = agent is shutting down (ending event)
+            shutdownToolIds.add(block.id);
+            lastEndingIndex = activityIndex++;
+            hasActivityAfterLastEnding = false;
+          } else {
+            hasAnyOngoingActivity = true;
+            if (lastEndingIndex >= 0) {
+              hasActivityAfterLastEnding = true;
+            }
+            activityIndex++;
+          }
+        } else if (block.type === 'text' && block.text && String(block.text).trim().length > 0) {
+          lastEndingIndex = activityIndex++;
+          hasActivityAfterLastEnding = false;
+        }
+      }
+    } else if (parsed.type === 'user' && Array.isArray(parsed.content)) {
+      // Check if this is a user-rejected tool use (ending event, not ongoing activity)
+      const isRejection =
+        'toolUseResult' in entry &&
+        (entry as unknown as Record<string, unknown>).toolUseResult === 'User rejected tool use';
+
+      for (const block of parsed.content) {
+        if (block.type === 'tool_result' && block.tool_use_id) {
+          if (shutdownToolIds.has(block.tool_use_id) || isRejection) {
+            // Shutdown tool result or user rejection = ending event
+            lastEndingIndex = activityIndex++;
+            hasActivityAfterLastEnding = false;
+          } else {
+            hasAnyOngoingActivity = true;
+            if (lastEndingIndex >= 0) {
+              hasActivityAfterLastEnding = true;
+            }
+            activityIndex++;
+          }
+        } else if (
+          block.type === 'text' &&
+          typeof block.text === 'string' &&
+          block.text.startsWith('[Request interrupted by user')
+        ) {
+          lastEndingIndex = activityIndex++;
+          hasActivityAfterLastEnding = false;
+        }
+      }
+    }
+  }
+
+  return {
+    firstUserMessage: firstUserMessage ?? firstCommandMessage,
+    messageCount,
+    isOngoing: lastEndingIndex === -1 ? hasAnyOngoingActivity : hasActivityAfterLastEnding,
+    gitBranch,
+  };
+}
