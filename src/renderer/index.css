@@ -186,6 +186,11 @@
   --context-btn-bg-hover: rgba(255, 255, 255, 0.14);
   --context-btn-active-bg: rgba(99, 102, 241, 0.45);
   --context-btn-active-text: #e0e7ff;
+
+  /* Skeleton — tinted deep charcoal (2% cool shift) */
+  --skeleton-base: #24262c;
+  --skeleton-base-light: #2c2e35;
+  --skeleton-base-dim: rgba(36, 38, 44, 0.6);
 }
 
 /* Light theme overrides - Warm neutral palette for eye comfort */
@@ -371,6 +376,11 @@
   --context-btn-bg-hover: rgba(0, 0, 0, 0.1);
   --context-btn-active-bg: rgba(99, 102, 241, 0.35);
   --context-btn-active-text: #3730a3;
+
+  /* Skeleton — tinted cool gray */
+  --skeleton-base: #d6d8de;
+  --skeleton-base-light: #cdd0d7;
+  --skeleton-base-dim: rgba(205, 208, 215, 0.6);
 }
 
 * {
@@ -485,21 +495,55 @@ body {
   background: linear-gradient(
     90deg,
     transparent 0%,
-    rgba(255, 255, 255, 0.04) 40%,
-    rgba(255, 255, 255, 0.06) 50%,
-    rgba(255, 255, 255, 0.04) 60%,
+    rgba(255, 255, 255, 0.06) 40%,
+    rgba(255, 255, 255, 0.1) 50%,
+    rgba(255, 255, 255, 0.06) 60%,
     transparent 100%
   );
-  animation: shimmer 1.8s ease-in-out infinite;
+  animation: shimmer 1.2s ease-in-out infinite;
 }
 
 :root.light .skeleton-card::after {
   background: linear-gradient(
     90deg,
     transparent 0%,
-    rgba(0, 0, 0, 0.03) 40%,
-    rgba(0, 0, 0, 0.05) 50%,
-    rgba(0, 0, 0, 0.03) 60%,
+    rgba(0, 0, 0, 0.04) 40%,
+    rgba(0, 0, 0, 0.07) 50%,
+    rgba(0, 0, 0, 0.04) 60%,
+    transparent 100%
+  );
+}
+
+/* Per-element shimmer — fast, high-contrast sweep */
+.skeleton-shimmer {
+  position: relative;
+  overflow: hidden;
+}
+
+.skeleton-shimmer::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.06) 40%,
+    rgba(255, 255, 255, 0.1) 50%,
+    rgba(255, 255, 255, 0.06) 60%,
+    transparent 100%
+  );
+  animation: shimmer 1.2s ease-in-out infinite;
+}
+
+:root.light .skeleton-shimmer::after {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(0, 0, 0, 0.04) 40%,
+    rgba(0, 0, 0, 0.07) 50%,
+    rgba(0, 0, 0, 0.04) 60%,
     transparent 100%
   );
 }

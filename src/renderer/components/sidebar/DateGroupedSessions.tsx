@@ -203,22 +203,28 @@ export const DateGroupedSessions = (): React.JSX.Element => {
   }
 
   if (sessionsLoading && sessions.length === 0) {
+    const widths = [
+      { header: '30%', title: '75%', sub: '90%' },
+      { header: '22%', title: '60%', sub: '80%' },
+      { header: '26%', title: '85%', sub: '65%' },
+    ];
+
     return (
       <div className="p-4">
         <div className="space-y-3">
-          {[...Array<undefined>(3)].map((_, i) => (
-            <div key={i} className="animate-pulse">
+          {widths.map((w, i) => (
+            <div key={i} className="space-y-2">
               <div
-                className="mb-3 h-3 w-1/4 rounded"
-                style={{ backgroundColor: 'var(--color-surface-raised)' }}
+                className="skeleton-shimmer h-3 rounded-sm"
+                style={{ backgroundColor: 'var(--skeleton-base-dim)', width: w.header }}
               />
               <div
-                className="mb-2 h-4 w-2/3 rounded"
-                style={{ backgroundColor: 'var(--color-surface-raised)' }}
+                className="skeleton-shimmer h-4 rounded-sm"
+                style={{ backgroundColor: 'var(--skeleton-base)', width: w.title }}
               />
               <div
-                className="h-3 w-full rounded"
-                style={{ backgroundColor: 'var(--color-surface-raised)', opacity: 0.5 }}
+                className="skeleton-shimmer h-3 rounded-sm"
+                style={{ backgroundColor: 'var(--skeleton-base-dim)', width: w.sub }}
               />
             </div>
           ))}

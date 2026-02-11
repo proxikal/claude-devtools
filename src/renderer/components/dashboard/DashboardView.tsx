@@ -54,7 +54,7 @@ const CommandSearch = ({ value, onChange }: Readonly<CommandSearchProps>): React
     <div className="relative mx-auto w-full max-w-xl">
       {/* Search container with glow effect on focus */}
       <div
-        className={`relative flex items-center gap-3 rounded-lg border bg-surface-raised px-4 py-3 transition-all duration-200 ${
+        className={`relative flex items-center gap-3 rounded-sm border bg-surface-raised px-4 py-3 transition-all duration-200 ${
           isFocused
             ? 'border-zinc-500 shadow-[0_0_20px_rgba(255,255,255,0.04)] ring-1 ring-zinc-600/30'
             : 'border-border hover:border-zinc-600'
@@ -154,14 +154,14 @@ const RepositoryCard = ({
   return (
     <button
       onClick={onClick}
-      className={`group relative flex min-h-[120px] flex-col overflow-hidden rounded-xl border p-4 text-left transition-all duration-300 ${
+      className={`group relative flex min-h-[120px] flex-col overflow-hidden rounded-sm border p-4 text-left transition-all duration-300 ${
         isHighlighted
           ? 'border-border-emphasis bg-surface-raised'
           : 'bg-surface/50 border-border hover:border-border-emphasis hover:bg-surface-raised'
       } `}
     >
       {/* Icon with subtle border */}
-      <div className="mb-3 flex size-8 items-center justify-center rounded-lg border border-border bg-surface-overlay transition-colors duration-300 group-hover:border-border-emphasis">
+      <div className="mb-3 flex size-8 items-center justify-center rounded-sm border border-border bg-surface-overlay transition-colors duration-300 group-hover:border-border-emphasis">
         <FolderGit2 className="size-4 text-text-secondary transition-colors group-hover:text-text" />
       </div>
 
@@ -232,11 +232,11 @@ const NewProjectCard = (): React.JSX.Element => {
 
   return (
     <button
-      className="hover:bg-surface/30 group relative flex min-h-[120px] flex-col items-center justify-center rounded-xl border border-dashed border-border bg-transparent p-4 transition-all duration-300 hover:border-border-emphasis"
+      className="hover:bg-surface/30 group relative flex min-h-[120px] flex-col items-center justify-center rounded-sm border border-dashed border-border bg-transparent p-4 transition-all duration-300 hover:border-border-emphasis"
       onClick={handleClick}
       title="Select a project folder"
     >
-      <div className="mb-2 flex size-8 items-center justify-center rounded-lg border border-dashed border-border transition-colors duration-300 group-hover:border-border-emphasis">
+      <div className="mb-2 flex size-8 items-center justify-center rounded-sm border border-dashed border-border transition-colors duration-300 group-hover:border-border-emphasis">
         <FolderOpen className="size-4 text-text-muted transition-colors group-hover:text-text-secondary" />
       </div>
       <span className="text-xs text-text-muted transition-colors group-hover:text-text-secondary">
@@ -295,24 +295,52 @@ const ProjectsGrid = ({
   }, [repositoryGroups, searchQuery, maxProjects]);
 
   if (repositoryGroupsLoading) {
+    // Organic widths per card — no repeating stamp
+    const titleWidths = [60, 66, 50, 55, 75, 45, 40, 65];
+    const pathWidths = [80, 75, 85, 66, 70, 80, 60, 72];
+
     return (
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-4">
         {Array.from({ length: 8 }).map((_, i) => (
           <div
             key={i}
-            className="skeleton-card bg-surface/50 flex min-h-[120px] flex-col rounded-xl border border-border p-4"
-            style={{ animationDelay: `${i * 80}ms` }}
+            className="skeleton-card flex min-h-[120px] flex-col rounded-sm border border-border p-4"
+            style={{
+              animationDelay: `${i * 80}ms`,
+              backgroundColor: 'var(--skeleton-base)',
+            }}
           >
             {/* Icon placeholder */}
-            <div className="mb-3 size-8 rounded-lg bg-surface-raised" />
+            <div
+              className="mb-3 size-8 rounded-sm"
+              style={{ backgroundColor: 'var(--skeleton-base-light)' }}
+            />
             {/* Title placeholder */}
-            <div className="mb-2 h-3.5 w-3/5 rounded bg-surface-raised" />
+            <div
+              className="mb-2 h-3.5 rounded-sm"
+              style={{
+                width: `${titleWidths[i]}%`,
+                backgroundColor: 'var(--skeleton-base-light)',
+              }}
+            />
             {/* Path placeholder */}
-            <div className="bg-surface-raised/60 mb-auto h-2.5 w-4/5 rounded" />
+            <div
+              className="mb-auto h-2.5 rounded-sm"
+              style={{
+                width: `${pathWidths[i]}%`,
+                backgroundColor: 'var(--skeleton-base-dim)',
+              }}
+            />
             {/* Meta row placeholder */}
             <div className="mt-3 flex gap-2">
-              <div className="bg-surface-raised/40 h-2.5 w-16 rounded" />
-              <div className="bg-surface-raised/40 h-2.5 w-12 rounded" />
+              <div
+                className="h-2.5 w-16 rounded-sm"
+                style={{ backgroundColor: 'var(--skeleton-base-dim)' }}
+              />
+              <div
+                className="h-2.5 w-12 rounded-sm"
+                style={{ backgroundColor: 'var(--skeleton-base-dim)' }}
+              />
             </div>
           </div>
         ))}
@@ -322,8 +350,8 @@ const ProjectsGrid = ({
 
   if (filteredRepos.length === 0 && searchQuery.trim()) {
     return (
-      <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border px-8 py-16">
-        <div className="mb-4 flex size-12 items-center justify-center rounded-xl border border-border bg-surface-raised">
+      <div className="flex flex-col items-center justify-center rounded-sm border border-dashed border-border px-8 py-16">
+        <div className="mb-4 flex size-12 items-center justify-center rounded-sm border border-border bg-surface-raised">
           <Search className="size-6 text-text-muted" />
         </div>
         <p className="mb-1 text-sm text-text-secondary">No projects found</p>
@@ -334,8 +362,8 @@ const ProjectsGrid = ({
 
   if (repositoryGroups.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border px-8 py-16">
-        <div className="mb-4 flex size-12 items-center justify-center rounded-xl border border-border bg-surface-raised">
+      <div className="flex flex-col items-center justify-center rounded-sm border border-dashed border-border px-8 py-16">
+        <div className="mb-4 flex size-12 items-center justify-center rounded-sm border border-border bg-surface-raised">
           <FolderGit2 className="size-6 text-text-muted" />
         </div>
         <p className="mb-1 text-sm text-text-secondary">No projects found</p>
