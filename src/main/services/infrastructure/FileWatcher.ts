@@ -80,6 +80,8 @@ export class FileWatcher extends EventEmitter {
   private processingInProgress = new Set<string>();
   /** Files that need reprocessing after current processing completes */
   private pendingReprocess = new Set<string>();
+  /** Flag to prevent reuse after disposal */
+  private disposed = false;
 
   constructor(
     dataCache: DataCache,
@@ -117,6 +119,11 @@ export class FileWatcher extends EventEmitter {
    * Starts watching the projects and todos directories.
    */
   start(): void {
+    if (this.disposed) {
+      logger.error('Cannot start disposed FileWatcher');
+      return;
+    }
+
     if (this.isWatching) {
       logger.warn('Already watching');
       return;
@@ -179,6 +186,65 @@ export class FileWatcher extends EventEmitter {
     this.pendingReprocess.clear();
 
     logger.info('Stopped watching');
+  }
+
+  /**
+   * Disposes all resources and prevents reuse.
+   * Performs comprehensive cleanup of all timers, watchers, maps, and listeners.
+   *
+   * After calling dispose(), this FileWatcher cannot be restarted.
+   * Use stop() for temporary pausing that can be resumed with start().
+   */
+  dispose(): void {
+    if (this.disposed) {
+      logger.warn('FileWatcher already disposed');
+      return;
+    }
+
+    logger.info('Disposing FileWatcher');
+
+    // 1. Stop watchers and clear timers (uses existing stop() logic)
+    this.stop();
+
+    // 2. Clear retry timer (stop() already handles this, but being explicit)
+    if (this.retryTimer) {
+      clearTimeout(this.retryTimer);
+      this.retryTimer = null;
+    }
+
+    // 3. Clear all debounce timers (stop() already handles this)
+    for (const timer of this.debounceTimers.values()) {
+      clearTimeout(timer);
+    }
+    this.debounceTimers.clear();
+
+    // 4. Clear catch-up timer (stop() already handles this)
+    if (this.catchUpTimer) {
+      clearInterval(this.catchUpTimer);
+      this.catchUpTimer = null;
+    }
+
+    // 5. Clear polling timer (stop() already handles this)
+    if (this.pollingTimer) {
+      clearInterval(this.pollingTimer);
+      this.pollingTimer = null;
+    }
+
+    // 6. Clear all tracking maps (stop() already handles most of these)
+    this.lastProcessedLineCount.clear();
+    this.lastProcessedSize.clear();
+    this.activeSessionFiles.clear();
+    this.polledFileSizes.clear();
+    this.processingInProgress.clear();
+    this.pendingReprocess.clear();
+
+    // 7. Remove all EventEmitter listeners (MUST be last)
+    this.removeAllListeners();
+
+    // 8. Mark as disposed
+    this.disposed = true;
+
+    logger.info('FileWatcher disposed');
   }
 
   /**

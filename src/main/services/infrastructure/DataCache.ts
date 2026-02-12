@@ -29,6 +29,7 @@ export class DataCache {
   private maxSize: number;
   private ttl: number; // Time-to-live in milliseconds
   private enabled: boolean; // Whether caching is enabled
+  private disposed = false; // Flag to prevent reuse after disposal
   private static readonly CURRENT_VERSION = 2; // Increment when cache structure changes
 
   constructor(maxSize: number = 50, ttlMinutes: number = 10, enabled: boolean = true) {
@@ -352,5 +353,33 @@ export class DataCache {
     }
 
     return sessionIds;
+  }
+
+  /**
+   * Disposes the cache and prevents further use.
+   * Clears all cached data and disables caching.
+   *
+   * Note: The auto-cleanup interval returned by startAutoCleanup() is managed
+   * by the caller (ServiceContext), not stored internally, so we only need to
+   * clear the cache and disable it.
+   */
+  dispose(): void {
+    if (this.disposed) {
+      logger.info('DataCache already disposed');
+      return;
+    }
+
+    logger.info('Disposing DataCache');
+
+    // Clear all cached data
+    this.cache.clear();
+
+    // Disable caching
+    this.enabled = false;
+
+    // Mark as disposed
+    this.disposed = true;
+
+    logger.info('DataCache disposed');
   }
 }
