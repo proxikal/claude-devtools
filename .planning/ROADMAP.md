@@ -42,12 +42,12 @@ Plans:
   3. Switching between contexts routes IPC requests to the correct service context
   4. Disconnecting SSH and reconnecting later restores the same SSH context (not recreated from scratch)
   5. File watcher events only fire for the active context (no cross-context pollution)
-**Plans**: 2-3 plans
+**Plans**: 3 plans
 
 Plans:
-- [ ] 02-01: ServiceContextRegistry with context lifecycle management
-- [ ] 02-02: IPC context API and preload bridge
-- [ ] 02-03: Connection profiles in ConfigManager
+- [ ] 02-01-PLAN.md — ServiceContext bundle class, ServiceContextRegistry coordinator, and dispose() methods for FileWatcher/DataCache
+- [ ] 02-02-PLAN.md — Wire registry into main/index.ts and update all IPC handlers to route via registry
+- [ ] 02-03-PLAN.md — Context management IPC channels, preload bridge, and connection profiles in ConfigManager
 
 ### Phase 3: State Management
 **Goal**: Context switching preserves exact UI state per workspace with instant restoration
@@ -89,10 +89,10 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Provider Plumbing | 1/1 | ✓ Complete | 2026-02-12 |
-| 2. Service Infrastructure | 0/2-3 | Not started | - |
+| 2. Service Infrastructure | 0/3 | Not started | - |
 | 3. State Management | 0/1-2 | Not started | - |
 | 4. Workspace UI | 0/1-2 | Not started | - |
 
 ---
 *Roadmap created: 2026-02-12*
-*Last updated: 2026-02-12 after Phase 1 execution complete*
+*Last updated: 2026-02-12 after Phase 2 planning complete*
