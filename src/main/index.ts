@@ -18,6 +18,7 @@ import {
 } from '@shared/constants';
 import { createLogger } from '@shared/utils/logger';
 import { app, BrowserWindow, ipcMain } from 'electron';
+import { existsSync } from 'fs';
 import { join } from 'path';
 
 import { initializeIpcHandlers, removeIpcHandlers } from './ipc/handlers';
@@ -66,6 +67,18 @@ let httpServer: HttpServer;
 // File watcher event cleanup functions
 let fileChangeCleanup: (() => void) | null = null;
 let todoChangeCleanup: (() => void) | null = null;
+
+/**
+ * Resolve production renderer index path.
+ * Main bundle lives in dist-electron/main, while renderer lives in out/renderer.
+ */
+function getRendererIndexPath(): string {
+  const candidates = [
+    join(__dirname, '../../out/renderer/index.html'),
+    join(__dirname, '../renderer/index.html'),
+  ];
+  return candidates.find((candidate) => existsSync(candidate)) ?? candidates[0];
+}
 
 /**
  * Wires file watcher events from a ServiceContext to the renderer and HTTP SSE clients.
@@ -356,7 +369,9 @@ function createWindow(): void {
     void mainWindow.loadURL(`http://localhost:${DEV_SERVER_PORT}`);
     mainWindow.webContents.openDevTools();
   } else {
-    void mainWindow.loadFile(join(__dirname, '../renderer/index.html'));
+    void mainWindow.loadFile(getRendererIndexPath()).catch((error: unknown) => {
+      logger.error('Failed to load renderer entry HTML:', error);
+    });
   }
 
   // Set traffic light position + notify renderer on first load, and auto-check for updates

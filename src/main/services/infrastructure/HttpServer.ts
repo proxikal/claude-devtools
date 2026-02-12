@@ -13,6 +13,7 @@ import { type HttpServices, registerHttpRoutes } from '@main/http';
 import { broadcastEvent } from '@main/http/events';
 import { createLogger } from '@shared/utils/logger';
 import Fastify, { type FastifyInstance } from 'fastify';
+import { existsSync } from 'fs';
 import { join } from 'path';
 
 const logger = createLogger('Service:HttpServer');
@@ -57,7 +58,13 @@ export class HttpServer {
     // Register static file serving (production only)
     const isDev = process.env.NODE_ENV === 'development';
     if (!isDev) {
-      const rendererPath = join(__dirname, '../../renderer');
+      const rendererPathCandidates = [
+        join(__dirname, '../../../out/renderer'),
+        join(__dirname, '../../renderer'),
+      ];
+      const rendererPath =
+        rendererPathCandidates.find((candidate) => existsSync(candidate)) ??
+        rendererPathCandidates[0];
       await this.app.register(fastifyStatic, {
         root: rendererPath,
         prefix: '/',
