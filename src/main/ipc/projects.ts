@@ -14,18 +14,18 @@ import { type Project, type RepositoryGroup, type Session } from '../types';
 
 import { validateProjectId } from './guards';
 
-import type { ProjectScanner } from '../services';
+import type { ServiceContextRegistry } from '../services';
 
 const logger = createLogger('IPC:projects');
 
-// Service instance - set via initialize
-let projectScanner: ProjectScanner;
+// Service registry - set via initialize
+let registry: ServiceContextRegistry;
 
 /**
- * Initializes project handlers with service instance.
+ * Initializes project handlers with service registry.
  */
-export function initializeProjectHandlers(scanner: ProjectScanner): void {
-  projectScanner = scanner;
+export function initializeProjectHandlers(contextRegistry: ServiceContextRegistry): void {
+  registry = contextRegistry;
 }
 
 /**
@@ -60,6 +60,7 @@ export function removeProjectHandlers(ipcMain: IpcMain): void {
  */
 async function handleGetProjects(_event: IpcMainInvokeEvent): Promise<Project[]> {
   try {
+    const { projectScanner } = registry.getActive();
     const projects = await projectScanner.scan();
     return projects;
   } catch (error) {
@@ -75,6 +76,7 @@ async function handleGetProjects(_event: IpcMainInvokeEvent): Promise<Project[]>
  */
 async function handleGetRepositoryGroups(_event: IpcMainInvokeEvent): Promise<RepositoryGroup[]> {
   try {
+    const { projectScanner } = registry.getActive();
     const groups = await projectScanner.scanWithWorktreeGrouping();
     return groups;
   } catch (error) {
@@ -100,6 +102,7 @@ async function handleGetWorktreeSessions(
       return [];
     }
 
+    const { projectScanner } = registry.getActive();
     const sessions = await projectScanner.listWorktreeSessions(validatedProject.value!);
     return sessions;
   } catch (error) {

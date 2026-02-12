@@ -2,8 +2,8 @@
  * SSH IPC Handlers - Manages SSH connection lifecycle from renderer requests.
  *
  * Channels:
- * - ssh:connect - Connect to SSH host, switch to remote mode
- * - ssh:disconnect - Disconnect and switch back to local mode
+ * - ssh:connect - Connect to SSH host, create new context
+ * - ssh:disconnect - Disconnect and switch back to local context
  * - ssh:getState - Get current connection state
  * - ssh:test - Test connection without switching
  */
@@ -20,13 +20,14 @@ import {
 } from '@preload/constants/ipcChannels';
 import { createLogger } from '@shared/utils/logger';
 
-import { configManager } from '../services';
+import { configManager, ServiceContext } from '../services';
 
 import type {
+  ServiceContextRegistry,
   SshConnectionConfig,
   SshConnectionManager,
   SshConnectionStatus,
-} from '../services/infrastructure/SshConnectionManager';
+} from '../services';
 import type { SshLastConnection } from '@shared/types';
 import type { IpcMain } from 'electron';
 
@@ -37,7 +38,7 @@ const logger = createLogger('IPC:ssh');
 // =============================================================================
 
 let connectionManager: SshConnectionManager;
-let onModeSwitch: ((mode: 'local' | 'ssh') => Promise<void>) | null = null;
+let registry: ServiceContextRegistry;
 
 // =============================================================================
 // Initialization
@@ -46,14 +47,14 @@ let onModeSwitch: ((mode: 'local' | 'ssh') => Promise<void>) | null = null;
 /**
  * Initialize SSH handlers with required services.
  * @param manager - The SSH connection manager instance
- * @param modeSwitchCallback - Called when switching between local/SSH mode
+ * @param contextRegistry - The service context registry
  */
 export function initializeSshHandlers(
   manager: SshConnectionManager,
-  modeSwitchCallback: (mode: 'local' | 'ssh') => Promise<void>
+  contextRegistry: ServiceContextRegistry
 ): void {
   connectionManager = manager;
-  onModeSwitch = modeSwitchCallback;
+  registry = contextRegistry;
 }
 
 // =============================================================================
@@ -63,10 +64,41 @@ export function initializeSshHandlers(
 export function registerSshHandlers(ipcMain: IpcMain): void {
   ipcMain.handle(SSH_CONNECT, async (_event, config: SshConnectionConfig) => {
     try {
+      // Connect to SSH host
       await connectionManager.connect(config);
-      if (onModeSwitch) {
-        await onModeSwitch('ssh');
+
+      // Get provider and remote path
+      const provider = connectionManager.getProvider();
+      const remoteProjectsPath = connectionManager.getRemoteProjectsPath() ?? undefined;
+
+      // Generate context ID
+      const contextId = `ssh-${config.host}`;
+
+      // Destroy existing SSH context if any (reconnection case)
+      if (registry.has(contextId)) {
+        logger.info(`Destroying existing SSH context: ${contextId}`);
+        registry.destroy(contextId);
       }
+
+      // Create new SSH context
+      const sshContext = new ServiceContext({
+        id: contextId,
+        type: 'ssh',
+        fsProvider: provider,
+        projectsDir: remoteProjectsPath,
+      });
+
+      // Register and start SSH context
+      registry.registerContext(sshContext);
+      sshContext.start();
+
+      // Switch to SSH context
+      registry.switch(contextId);
+
+      // Import and call context switch callback from index.ts
+      const { onContextSwitched } = await import('../index');
+      onContextSwitched(sshContext);
+
       return { success: true, data: connectionManager.getStatus() };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -77,10 +109,27 @@ export function registerSshHandlers(ipcMain: IpcMain): void {
 
   ipcMain.handle(SSH_DISCONNECT, async () => {
     try {
+      // Get current SSH context ID before disconnecting
+      const currentContextId = registry.getActiveContextId();
+      const isSshContext = currentContextId.startsWith('ssh-');
+
+      // Disconnect from SSH
       connectionManager.disconnect();
-      if (onModeSwitch) {
-        await onModeSwitch('local');
+
+      // If we were on an SSH context, destroy it
+      if (isSshContext) {
+        // Switch back to local first (this also starts local file watcher)
+        registry.switch('local');
+
+        // Destroy the SSH context
+        registry.destroy(currentContextId);
+
+        // Call context switch callback to rewire events
+        const localContext = registry.getActive();
+        const { onContextSwitched } = await import('../index');
+        onContextSwitched(localContext);
       }
+
       return { success: true, data: connectionManager.getStatus() };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

@@ -14,16 +14,16 @@ import { coerceSearchMaxResults, validateProjectId, validateSearchQuery } from '
 
 const logger = createLogger('IPC:search');
 
-import type { ProjectScanner } from '../services';
+import type { ServiceContextRegistry } from '../services';
 
-// Service instance - set via initialize
-let projectScanner: ProjectScanner;
+// Service registry - set via initialize
+let registry: ServiceContextRegistry;
 
 /**
- * Initializes search handlers with service instance.
+ * Initializes search handlers with service registry.
  */
-export function initializeSearchHandlers(scanner: ProjectScanner): void {
-  projectScanner = scanner;
+export function initializeSearchHandlers(contextRegistry: ServiceContextRegistry): void {
+  registry = contextRegistry;
 }
 
 /**
@@ -68,6 +68,7 @@ async function handleSearchSessions(
       return { results: [], totalMatches: 0, sessionsSearched: 0, query };
     }
 
+    const { projectScanner } = registry.getActive();
     const safeMaxResults = coerceSearchMaxResults(maxResults, 50);
     const result = await projectScanner.searchSessions(
       validatedProject.value!,

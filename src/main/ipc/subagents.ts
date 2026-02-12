@@ -12,38 +12,18 @@ import { type SubagentDetail } from '../types';
 
 import { validateProjectId, validateSessionId, validateSubagentId } from './guards';
 
-import type {
-  ChunkBuilder,
-  DataCache,
-  ProjectScanner,
-  SessionParser,
-  SubagentResolver,
-} from '../services';
+import type { ServiceContextRegistry } from '../services';
 
 const logger = createLogger('IPC:subagents');
 
-// Service instances - set via initialize
-let chunkBuilder: ChunkBuilder;
-let dataCache: DataCache;
-let sessionParser: SessionParser;
-let subagentResolver: SubagentResolver;
-let projectScanner: ProjectScanner;
+// Service registry - set via initialize
+let registry: ServiceContextRegistry;
 
 /**
- * Initializes subagent handlers with service instances.
+ * Initializes subagent handlers with service registry.
  */
-export function initializeSubagentHandlers(
-  builder: ChunkBuilder,
-  cache: DataCache,
-  parser: SessionParser,
-  resolver: SubagentResolver,
-  scanner: ProjectScanner
-): void {
-  chunkBuilder = builder;
-  dataCache = cache;
-  sessionParser = parser;
-  subagentResolver = resolver;
-  projectScanner = scanner;
+export function initializeSubagentHandlers(contextRegistry: ServiceContextRegistry): void {
+  registry = contextRegistry;
 }
 
 /**
@@ -96,6 +76,9 @@ async function handleGetSubagentDetail(
     const safeProjectId = validatedProject.value!;
     const safeSessionId = validatedSession.value!;
     const safeSubagentId = validatedSubagent.value!;
+
+    const { chunkBuilder, sessionParser, subagentResolver, projectScanner, dataCache } =
+      registry.getActive();
 
     const cacheKey = `subagent-${safeProjectId}-${safeSessionId}-${safeSubagentId}`;
 

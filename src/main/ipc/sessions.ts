@@ -24,33 +24,19 @@ import {
 
 import { coercePageLimit, validateProjectId, validateSessionId } from './guards';
 
-import type { ChunkBuilder, ProjectScanner, SessionParser, SubagentResolver } from '../services';
+import type { ServiceContextRegistry } from '../services';
 import type { WaterfallData } from '@shared/types';
 
 const logger = createLogger('IPC:sessions');
 
-// Service instances - set via initialize
-let projectScanner: ProjectScanner;
-let sessionParser: SessionParser;
-let subagentResolver: SubagentResolver;
-let chunkBuilder: ChunkBuilder;
-let dataCache: DataCache;
+// Service registry - set via initialize
+let registry: ServiceContextRegistry;
 
 /**
- * Initializes session handlers with service instances.
+ * Initializes session handlers with service registry.
  */
-export function initializeSessionHandlers(
-  scanner: ProjectScanner,
-  parser: SessionParser,
-  resolver: SubagentResolver,
-  builder: ChunkBuilder,
-  cache: DataCache
-): void {
-  projectScanner = scanner;
-  sessionParser = parser;
-  subagentResolver = resolver;
-  chunkBuilder = builder;
-  dataCache = cache;
+export function initializeSessionHandlers(contextRegistry: ServiceContextRegistry): void {
+  registry = contextRegistry;
 }
 
 /**
@@ -100,6 +86,7 @@ async function handleGetSessions(
       return [];
     }
 
+    const { projectScanner } = registry.getActive();
     const sessions = await projectScanner.listSessions(validatedProject.value!);
     return sessions;
   } catch (error) {
@@ -128,6 +115,7 @@ async function handleGetSessionsPaginated(
       return { sessions: [], nextCursor: null, hasMore: false, totalCount: 0 };
     }
 
+    const { projectScanner } = registry.getActive();
     const safeLimit = coercePageLimit(limit, 20);
     const result = await projectScanner.listSessionsPaginated(
       validatedProject.value!,
@@ -161,6 +149,9 @@ async function handleGetSessionDetail(
       );
       return null;
     }
+
+    const { projectScanner, sessionParser, subagentResolver, chunkBuilder, dataCache } =
+      registry.getActive();
 
     const safeProjectId = validatedProject.value!;
     const safeSessionId = validatedSession.value!;
@@ -223,6 +214,7 @@ async function handleGetSessionGroups(
       );
       return [];
     }
+    const { sessionParser, subagentResolver, chunkBuilder } = registry.getActive();
     const safeProjectId = validatedProject.value!;
     const safeSessionId = validatedSession.value!;
 
@@ -262,6 +254,7 @@ async function handleGetSessionMetrics(
     if (!validatedProject.valid || !validatedSession.valid) {
       return null;
     }
+    const { sessionParser, dataCache } = registry.getActive();
     const safeProjectId = validatedProject.value!;
     const safeSessionId = validatedSession.value!;
 
@@ -297,6 +290,7 @@ async function handleGetWaterfallData(
       return null;
     }
 
+    const { chunkBuilder } = registry.getActive();
     return chunkBuilder.buildWaterfallData(detail.chunks, detail.processes);
   } catch (error) {
     logger.error(`Error in get-waterfall-data for ${projectId}/${sessionId}:`, error);
