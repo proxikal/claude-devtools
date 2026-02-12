@@ -65,6 +65,9 @@ Recent decisions affecting current work:
 - [Phase 03-01]: Exclude all transient state from snapshots (loading flags, errors, Maps/Sets)
 - [Phase 03-01]: Validate restored tabs against fresh project/worktree data from target context
 - [Phase 03-01]: Full-screen overlay prevents stale data flash during context transitions
+- [Phase 04-01]: ContextSwitcher placed first in SidebarHeader Row 1, before project name, with vertical separator
+- [Phase 04-01]: Cmd+Shift+K check placed before Cmd+K to avoid shortcut shadowing
+- [Phase 04-01]: SSH status listener refreshes available contexts automatically on connection changes
 - [Phase 04-02]: HardDrive icon for Workspaces tab to differentiate from Server icon on Connection tab
 - [Phase 04-02]: WorkspaceSection manages own state internally (no props), matching ConnectionSection pattern
 - [Phase 04-02]: AppConfig type cast via unknown for ssh field access since AppConfig interface lacks ssh property
@@ -88,7 +91,7 @@ None yet.
 - ✓ RESOLVED: Snapshot validation filters invalid tabs and ensures at-least-one-pane invariant (03-01)
 
 **Phase 4:**
-- Context switcher placement in sidebar needs to fit with existing SidebarHeader without disrupting current layout
+- ✓ RESOLVED: Context switcher placed in Row 1 before project name with vertical separator — fits naturally without disrupting layout (04-01)
 
 ## Session Continuity
 
