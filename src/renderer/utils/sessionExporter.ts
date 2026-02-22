@@ -23,7 +23,12 @@ interface ExtractOptions {
 // =============================================================================
 
 function formatNumber(n: number): string {
-  return n.toLocaleString('en-US');
+  const str = String(Math.round(n));
+  const parts: string[] = [];
+  for (let i = str.length; i > 0; i -= 3) {
+    parts.unshift(str.slice(Math.max(0, i - 3), i));
+  }
+  return parts.join(',');
 }
 
 function formatCost(cost?: number): string {
