@@ -53,6 +53,28 @@ interface ActiveSessionFile {
   subagentId?: string;
 }
 
+/**
+ * Extracts the last assistant text output from a session's parsed messages.
+ * Used to populate session_end notification bodies with the agent's final response.
+ *
+ * @param messages - All parsed messages from the session
+ * @returns The last assistant text, or null if none found
+ */
+function extractLastAssistantText(messages: ParsedMessage[]): string | null {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i];
+    if (msg.type === 'assistant' && Array.isArray(msg.content)) {
+      for (let j = msg.content.length - 1; j >= 0; j--) {
+        const block = msg.content[j];
+        if (block.type === 'text' && typeof block.text === 'string' && block.text.trim()) {
+          return block.text.trim();
+        }
+      }
+    }
+  }
+  return null;
+}
+
 export class FileWatcher extends EventEmitter {
   private projectsWatcher: fs.FSWatcher | null = null;
   private todosWatcher: fs.FSWatcher | null = null;
@@ -791,6 +813,8 @@ export class FileWatcher extends EventEmitter {
 
       // Only fire if we previously knew it was ongoing (not undefined = first read)
       if (previousOngoing === true && !isOngoing) {
+        const lastOutput = extractLastAssistantText(allMessages);
+        const endMessage = lastOutput ?? 'Session completed';
         for (const trigger of sessionEndTriggers) {
           const error = createDetectedError({
             sessionId,
@@ -799,7 +823,7 @@ export class FileWatcher extends EventEmitter {
             projectName,
             lineNumber: allMessages.length,
             source: 'session',
-            message: 'Session completed',
+            message: endMessage,
             timestamp: now,
             cwd,
             triggerColor: trigger.color,
