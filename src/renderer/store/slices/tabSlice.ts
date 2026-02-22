@@ -399,7 +399,7 @@ export const createTabSlice: StateCreator<AppState, [], [], TabSlice> = (set, ge
     const newTab: Tab = {
       id: crypto.randomUUID(),
       type: 'spend',
-      label: 'Spend',
+      label: 'Usage',
       createdAt: Date.now(),
     };
 

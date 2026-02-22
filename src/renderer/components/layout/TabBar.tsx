@@ -427,7 +427,7 @@ export const TabBar = ({ paneId }: TabBarProps): React.JSX.Element => {
             color: spendHover ? 'var(--color-text)' : 'var(--color-text-muted)',
             backgroundColor: spendHover ? 'var(--color-surface-raised)' : 'transparent',
           }}
-          title="Spend Dashboard"
+          title="Usage Dashboard"
         >
           <TrendingUp className="size-4" />
         </button>

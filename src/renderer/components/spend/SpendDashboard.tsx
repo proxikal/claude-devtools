@@ -16,7 +16,7 @@ import { useEffect, useState } from 'react';
 
 import { api } from '@renderer/api';
 import { formatCostUsd } from '@shared/utils/costEstimator';
-import { AlertCircle, Clock, DollarSign, Loader2, TrendingUp, Zap } from 'lucide-react';
+import { AlertCircle, Clock, DollarSign, Info, Loader2, TrendingUp, Zap } from 'lucide-react';
 
 import type { SpendPeriod, SpendSummary } from '@shared/types/spend';
 
@@ -236,10 +236,34 @@ export const SpendDashboard = (): React.JSX.Element => {
           </div>
           <div>
             <h1 className="text-lg font-semibold" style={{ color: 'var(--color-text)' }}>
-              Spend Dashboard
+              Usage Dashboard
             </h1>
             <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-              Estimated costs based on local session files
+              API-equivalent cost of your Claude Code sessions
+            </p>
+          </div>
+        </div>
+
+        {/* ── Subscription disclaimer banner ───────────────────────────────── */}
+        <div
+          className="mb-8 flex gap-3 rounded-xl p-4"
+          style={{
+            backgroundColor: 'rgba(99, 102, 241, 0.08)',
+            border: '1px solid rgba(99, 102, 241, 0.25)',
+          }}
+        >
+          <Info className="mt-0.5 size-4 shrink-0" style={{ color: '#818cf8' }} />
+          <div>
+            <p className="text-sm font-medium" style={{ color: '#a5b4fc' }}>
+              These are not your actual charges
+            </p>
+            <p
+              className="mt-1 text-xs leading-relaxed"
+              style={{ color: 'var(--color-text-muted)' }}
+            >
+              If you use a Claude Max subscription, you pay a flat monthly rate — not per token. The
+              figures below show what equivalent usage would cost at public API prices. Subscription
+              users often see 20–100× more compute value than their monthly fee.
             </p>
           </div>
         </div>
@@ -428,10 +452,14 @@ export const SpendDashboard = (): React.JSX.Element => {
         )}
 
         {/* ── Footer note ─────────────────────────────────────────────────── */}
-        <p className="mt-4 text-center text-xs" style={{ color: 'var(--color-text-muted)' }}>
-          Estimates based on Anthropic public pricing. Actual charges may differ.
+        <p
+          className="mt-4 text-center text-xs leading-relaxed"
+          style={{ color: 'var(--color-text-muted)' }}
+        >
+          API-equivalent costs calculated from Anthropic public pricing (Feb 2026).
           <br />
-          Data sourced from <code className="font-mono">~/.claude/projects/</code> JSONL files.
+          Token data sourced from <code className="font-mono">~/.claude/projects/</code> JSONL
+          files.
         </p>
       </div>
     </div>
