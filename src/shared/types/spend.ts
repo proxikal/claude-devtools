@@ -37,7 +37,8 @@ export interface ModelSpend {
   label: string;
   costUsd: number;
   sessions: number;
-  /** 0–1 fraction of total cost */
+  outputTokens: number;
+  /** 0–1 fraction of total output tokens */
   fraction: number;
 }
 
