@@ -87,32 +87,54 @@ interface BarChartProps {
 }
 
 const BarChart = ({ daily }: BarChartProps): React.JSX.Element => {
-  // Show last 14 days
-  const days = daily.slice(-14);
+  // Build a dense 14-day window ending today, filling missing days with zeros
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const lookup = new Map(daily.map((d) => [d.date, d]));
+  const days = Array.from({ length: 14 }, (_, i) => {
+    const d = new Date();
+    d.setDate(d.getDate() - (13 - i));
+    const date = d.toISOString().slice(0, 10);
+    return lookup.get(date) ?? { date, costUsd: 0, sessions: 0 };
+  });
+
   const maxCost = Math.max(...days.map((d) => d.costUsd), 0.0001);
 
   return (
-    <div className="flex h-24 items-end gap-1">
-      {days.map((day) => {
-        const heightPct = Math.max((day.costUsd / maxCost) * 100, day.costUsd > 0 ? 4 : 0);
-        const isToday = day.date === new Date().toISOString().slice(0, 10);
-        return (
-          <div
-            key={day.date}
-            className="group relative flex flex-1 flex-col items-center justify-end"
-            title={`${relativeDate(day.date)}: ${formatCostUsd(day.costUsd)} · ${day.sessions} sessions`}
-          >
+    <div className="flex flex-col gap-1">
+      <div className="flex h-24 items-end gap-1">
+        {days.map((day) => {
+          const heightPct = Math.max((day.costUsd / maxCost) * 100, day.costUsd > 0 ? 4 : 0);
+          const isToday = day.date === todayStr;
+          return (
             <div
-              className="w-full rounded-t-sm transition-opacity group-hover:opacity-70"
-              style={{
-                height: `${heightPct}%`,
-                minHeight: day.costUsd > 0 ? '3px' : '0',
-                backgroundColor: isToday ? '#6366f1' : 'var(--color-border-emphasis)',
-              }}
-            />
-          </div>
-        );
-      })}
+              key={day.date}
+              className="group relative flex flex-1 flex-col items-center justify-end"
+              title={`${relativeDate(day.date)}: ${formatCostUsd(day.costUsd)} · ${day.sessions} sessions`}
+            >
+              <div
+                className="w-full rounded-t-sm transition-opacity group-hover:opacity-70"
+                style={{
+                  height: `${heightPct}%`,
+                  minHeight: day.costUsd > 0 ? '3px' : '0',
+                  backgroundColor: isToday ? '#6366f1' : 'var(--color-border-emphasis)',
+                }}
+              />
+            </div>
+          );
+        })}
+      </div>
+      {/* X-axis labels: first, middle, last */}
+      <div className="flex justify-between px-0">
+        <span className="text-[10px]" style={{ color: 'var(--color-text-muted)' }}>
+          {relativeDate(days[0].date)}
+        </span>
+        <span className="text-[10px]" style={{ color: 'var(--color-text-muted)' }}>
+          {relativeDate(days[6].date)}
+        </span>
+        <span className="text-[10px]" style={{ color: 'var(--color-text-muted)' }}>
+          {relativeDate(days[13].date)}
+        </span>
+      </div>
     </div>
   );
 };
@@ -277,37 +299,20 @@ export const SpendDashboard = (): React.JSX.Element => {
         </div>
 
         {/* ── 14-day activity chart ────────────────────────────────────────── */}
-        {daily.length > 0 && (
-          <div className="mb-8 rounded-xl p-4" style={{ border: '1px solid var(--color-border)' }}>
-            <div className="mb-3 flex items-center justify-between">
-              <span
-                className="text-xs font-semibold uppercase tracking-wider"
-                style={{ color: 'var(--color-text-muted)' }}
-              >
-                14-Day Activity
-              </span>
-              <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                <span style={{ color: '#6366f1' }}>■</span> today
-              </span>
-            </div>
-            <BarChart daily={daily} />
-            <div className="mt-2 flex justify-between">
-              {daily.slice(-14).map((d, i) =>
-                i === 0 || i === 6 || i === 13 ? (
-                  <span
-                    key={d.date}
-                    className="text-[10px]"
-                    style={{ color: 'var(--color-text-muted)' }}
-                  >
-                    {relativeDate(d.date)}
-                  </span>
-                ) : (
-                  <span key={d.date} />
-                )
-              )}
-            </div>
+        <div className="mb-8 rounded-xl p-4" style={{ border: '1px solid var(--color-border)' }}>
+          <div className="mb-3 flex items-center justify-between">
+            <span
+              className="text-xs font-semibold uppercase tracking-wider"
+              style={{ color: 'var(--color-text-muted)' }}
+            >
+              14-Day Activity
+            </span>
+            <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+              <span style={{ color: '#6366f1' }}>■</span> today
+            </span>
           </div>
-        )}
+          <BarChart daily={daily} />
+        </div>
 
         {/* ── By Project ──────────────────────────────────────────────────── */}
         {byProject.length > 0 && (
