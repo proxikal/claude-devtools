@@ -3,7 +3,7 @@
 **Owner:** proxikal (fork: https://github.com/proxikal/claude-devtools)
 **Branch:** `feat/project-analytics` (branch off `feat/spend-dashboard` once that merges)
 **Upstream:** matt1398/claude-devtools — **never open a PR without explicit user approval**
-**Status:** Phase 5 complete — Phase 6 in progress
+**Status:** Phase 6 complete — Phase 7 in progress
 **Last Updated:** 2026-02-22
 
 ---

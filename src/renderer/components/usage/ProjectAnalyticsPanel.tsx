@@ -36,12 +36,12 @@ function formatTokensLarge(n: number): string {
 
 function formatDateShort(iso: string): string {
   const d = new Date(iso + 'T00:00:00');
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
 function formatDateFull(iso: string): string {
   const d = new Date(iso + 'T00:00:00');
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
 function formatHour(hour: number): string {
@@ -651,10 +651,10 @@ function stripMarkdown(text: string): string {
 const SESSION_DEFAULT_LIMIT = 10;
 
 const SessionsList = ({ sessions }: SessionsListProps): React.JSX.Element | null => {
-  if (sessions.length === 0) return null;
-
   const [sort, setSort] = useState<SortKey>('totalTokens');
   const [showAll, setShowAll] = useState(false);
+
+  if (sessions.length === 0) return null;
 
   const sorted = [...sessions].sort((a, b) => {
     if (sort === 'date') return new Date(b.startTime).getTime() - new Date(a.startTime).getTime();
@@ -664,7 +664,7 @@ const SessionsList = ({ sessions }: SessionsListProps): React.JSX.Element | null
 
   const visible = showAll ? sorted : sorted.slice(0, SESSION_DEFAULT_LIMIT);
 
-  const sortLabel = (key: SortKey, label: string) => (
+  const sortLabel = (key: SortKey, label: string): React.JSX.Element => (
     <button
       onClick={() => setSort(key)}
       className="px-2 py-0.5 text-[10px] font-medium transition-colors"
@@ -844,10 +844,7 @@ export const ProjectAnalyticsPanel = ({
         <div className="mb-8">
           <button
             onClick={onBack}
-            className="mb-6 flex items-center gap-2 text-sm transition-colors"
-            style={{ color: 'var(--color-text-muted)' }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--color-text)')}
-            onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--color-text-muted)')}
+            className="mb-6 flex items-center gap-2 text-sm text-text-muted transition-colors hover:text-text"
           >
             <ArrowLeft className="size-4" />
             Back to Overview
