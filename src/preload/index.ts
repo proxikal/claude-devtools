@@ -52,7 +52,7 @@ import {
   CONFIG_UNPIN_SESSION,
   CONFIG_UPDATE,
   CONFIG_UPDATE_TRIGGER,
-  SPEND_GET_SUMMARY,
+  USAGE_GET_SUMMARY,
 } from './constants/ipcChannels';
 
 import type {
@@ -452,11 +452,11 @@ const electronAPI: ElectronAPI = {
     },
   },
 
-  // Spend / Cost API
-  spend: {
+  // Usage API
+  usage: {
     getSummary: async () => {
-      return ipcRenderer.invoke(SPEND_GET_SUMMARY) as Promise<
-        import('@shared/types/spend').SpendSummary
+      return ipcRenderer.invoke(USAGE_GET_SUMMARY) as Promise<
+        import('@shared/types/usage').UsageSummary
       >;
     },
   },
