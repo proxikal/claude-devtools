@@ -330,6 +330,26 @@ export const ChatHistory = ({ tabId }: ChatHistoryProps): JSX.Element => {
     syncSearchMatchesWithRendered,
   ]);
 
+  // Scroll to bottom when a session finishes loading (loading → loaded transition).
+  // The virtualizer renders items lazily, so useAutoScrollBottom's dependency effect
+  // fires before scrollHeight is accurate. A double-RAF here gives the DOM time to settle.
+  const prevConversationLoadingRef = useRef(conversationLoading);
+  useEffect(() => {
+    const wasLoading = prevConversationLoadingRef.current;
+    prevConversationLoadingRef.current = conversationLoading;
+
+    if (wasLoading && !conversationLoading && !pendingNavigation && scrollContainerRef.current) {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          const container = scrollContainerRef.current;
+          if (container) {
+            container.scrollTop = container.scrollHeight;
+          }
+        });
+      });
+    }
+  }, [conversationLoading, pendingNavigation]);
+
   // Track shouldDisableAutoScroll transitions for scroll restore coordination
   const prevShouldDisableRef = useRef(shouldDisableAutoScroll);
 
@@ -347,7 +367,7 @@ export const ChatHistory = ({ tabId }: ChatHistoryProps): JSX.Element => {
   // This preserves manual reading position when the user scrolls up.
   // Disabled during navigation to prevent conflicts with deep-link/search scrolling.
   useAutoScrollBottom([conversation], {
-    threshold: 150,
+    threshold: 300,
     smoothDuration: 300,
     autoBehavior: 'auto',
     disabled: shouldDisableAutoScroll,
