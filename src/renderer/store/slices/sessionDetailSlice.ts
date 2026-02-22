@@ -563,6 +563,14 @@ export const createSessionDetailSlice: StateCreator<AppState, [], [], SessionDet
         }
       }
 
+      // Snapshot existing AI group IDs before set() overwrites state.
+      // Must happen here — after set(), get().conversation is already the new data.
+      const prevGroupIds = new Set(
+        (get().conversation?.items ?? [])
+          .filter((item) => item.type === 'ai')
+          .map((item) => (item as { type: 'ai'; group: { id: string } }).group.id)
+      );
+
       // Update only the data, preserve UI states
       set((state) => ({
         sessionDetail: detail,
@@ -582,19 +590,13 @@ export const createSessionDetailSlice: StateCreator<AppState, [], [], SessionDet
       }));
 
       // Auto-expand newly arrived AI groups if the setting is enabled.
-      // Compare new conversation items against what was previously known to find new group IDs.
+      // Uses prevGroupIds snapshotted before set() so the diff is accurate.
       if (get().appConfig?.general?.autoExpandAIGroups) {
-        const oldConversation = get().conversation;
-        const oldGroupIds = new Set(
-          (oldConversation?.items ?? [])
-            .filter((item) => item.type === 'ai')
-            .map((item) => (item as { type: 'ai'; group: { id: string } }).group.id)
-        );
         const newGroupIds = newConversation.items
           .filter(
             (item) =>
               item.type === 'ai' &&
-              !oldGroupIds.has((item as { type: 'ai'; group: { id: string } }).group.id)
+              !prevGroupIds.has((item as { type: 'ai'; group: { id: string } }).group.id)
           )
           .map((item) => (item as { type: 'ai'; group: { id: string } }).group.id);
 
