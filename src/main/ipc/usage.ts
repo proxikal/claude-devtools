@@ -67,7 +67,7 @@ async function handleGetUsageSummary(): Promise<UsageSummary> {
   if (
     cachedSummary &&
     Date.now() < cachedSummary.expiresAt &&
-    cachedSummary.summary.byProject[0]?.totalTokens !== undefined
+    cachedSummary.summary.byProject.length > 0
   ) {
     return cachedSummary.summary;
   }

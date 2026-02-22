@@ -89,7 +89,7 @@ export function buildProjectAnalyticsSummary(
     const existing = hourDateMap.get(key) ?? 0;
     hourDateMap.set(key, existing + s.outputTokens);
 
-    const entry = hourTotals.get(hour) ?? { dates: new Map() };
+    const entry = hourTotals.get(hour) ?? { dates: new Map<string, number>() };
     const dateTotal = entry.dates.get(s.date) ?? 0;
     entry.dates.set(s.date, dateTotal + s.outputTokens);
     hourTotals.set(hour, entry);

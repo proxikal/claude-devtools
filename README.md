@@ -1,3 +1,8 @@
+> **This is [proxikal's fork](https://github.com/proxikal/claude-devtools) of [matt1398/claude-devtools](https://github.com/matt1398/claude-devtools).**
+> It contains features built on top of the upstream project. See the [Fork Status](#fork-status) section below for what's been added, what's been PR'd upstream, and what's still in progress.
+
+---
+
 <p align="center">
   <img src="resources/icons/png/1024x1024.png" alt="claude-devtools" width="120" />
 </p>
@@ -308,6 +313,86 @@ pnpm dist            # macOS + Windows + Linux
 | `pnpm check` | Full quality gate (types + lint + test + build) |
 
 </details>
+
+---
+
+---
+
+## Fork Status
+
+> What's been added in this fork, what's been submitted upstream, and what's still cooking.
+
+### Screenshots
+
+**Usage Dashboard** — token output across all projects, 14-day chart, per-project and per-model breakdown, heaviest sessions:
+
+| Overview | By Project / By Model |
+|---|---|
+| ![Usage Dashboard Overview](docs/screenshots/usage-dashboard-overview.png) | ![Usage Dashboard By Model](docs/screenshots/usage-dashboard-by-model.png) |
+
+**Project Analytics Panel** — click any project row to open a full analytics view with activity chart, peak moments, value ratio, and usage insights:
+
+| Project Panel | Model Breakdown + Value Ratio |
+|---|---|
+| ![Project Analytics Panel](docs/screenshots/analytics-project-panel.png) | ![Model Breakdown and Value Ratio](docs/screenshots/analytics-model-value.png) |
+
+---
+
+### Merged Upstream ✅
+
+These were submitted as PRs and accepted into `matt1398/claude-devtools`:
+
+| Feature | PR | Description |
+|---|---|---|
+| Sidebar auto-open on project select | [#56](https://github.com/matt1398/claude-devtools/pull/56) | Sidebar expands automatically when a project is selected |
+| Performance regression fix | [#55](https://github.com/matt1398/claude-devtools/pull/55) | Resolved slowdown in transcript loading and session search |
+| HTTP server IPC fix | [#57](https://github.com/matt1398/claude-devtools/pull/57) | Wrapped HTTP_SERVER_GET_STATUS response in IpcResult envelope |
+
+---
+
+### Open PRs / Pending Upstream Review ⏳
+
+| Feature | PR | Description |
+|---|---|---|
+| Auto-expand AI response groups setting | [#59](https://github.com/matt1398/claude-devtools/pull/59) | Toggle to auto-expand AI response groups + per-tool expand modal |
+
+---
+
+### In This Fork — Not Yet PR'd 🔧
+
+These live on `main` (local) and `feat/project-analytics` in this fork. Not yet submitted upstream — either needs more polish or is waiting for the right moment.
+
+#### Usage Dashboard (`feat/spend-dashboard` → merged into local `main`)
+
+A new **Usage** tab showing token output across all your Claude Code projects:
+
+- **Overview stats** — Today / This Week / This Month / All Time output tokens with API-equivalent cost
+- **14-day activity chart** — daily output tokens with today highlighted
+- **By Project** — ranked by total context tokens, dual bars (output + total), click to open project analytics
+- **By Model** — per-model output tokens with accurate multi-session attribution (sessions that switch models are split proportionally)
+- **Heaviest Sessions** — top sessions by total token count with first-message preview
+
+#### Project Analytics Panel (`feat/project-analytics`)
+
+Click any project row in the Usage Dashboard to open a full per-project analytics view:
+
+- **Summary header** — total output tokens, total context, session count, active days, date range
+- **Activity chart** — bar chart with 30d / 90d / All time toggle, peak day highlighted in amber, today in blue
+- **Peak Moments** — busiest day, busiest hour, longest consecutive streak
+- **By Model** — per-model token breakdown with percentage bars, session counts
+- **API Equivalent Value** — total API-equivalent cost at public Anthropic pricing; if on Claude Max, shows value ratio (e.g. `19x return on subscription`)
+- **Usage Insights** (toggleable, off by default) — pattern detection from JSONL data with no AI inference:
+  - Late-night peak hours (>20% of tokens between midnight–4am across 3+ days)
+  - Retry loop detection (tool failure rate >30% across 5+ sessions)
+  - Context thrash (output/total ratio <5% across 5+ sessions)
+  - Short-session churn (>20% of sessions under 2 min / 10K tokens)
+- **Sessions list** — all sessions sortable by total tokens / output tokens / date, subagent badges, first-message preview, click-to-open
+
+---
+
+### Related Upstream Issue
+
+Issue [#61 — Session Analysis Report](https://github.com/matt1398/claude-devtools/issues/61) proposes per-session analysis with tool usage stats, cost breakdown, friction points, and quality signals. The Project Analytics Panel here overlaps significantly with that vision. Open to coordinating if Matt wants to pull any of this in.
 
 ---
 

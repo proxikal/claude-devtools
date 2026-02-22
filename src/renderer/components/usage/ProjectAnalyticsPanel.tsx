@@ -963,8 +963,11 @@ export const ProjectAnalyticsPanel = ({
 
   useEffect(() => {
     let cancelled = false;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset state synchronously when projectId changes, batched by React 18
     setLoading(true);
+
     setError(null);
+
     setSummary(null);
 
     api.usage
