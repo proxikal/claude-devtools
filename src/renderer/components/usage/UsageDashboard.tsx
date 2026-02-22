@@ -18,6 +18,8 @@ import { api } from '@renderer/api';
 import { formatCostUsd } from '@shared/utils/usageEstimator';
 import { AlertCircle, Clock, Info, Loader2, TrendingUp, Zap } from 'lucide-react';
 
+import { ProjectAnalyticsPanel } from './ProjectAnalyticsPanel';
+
 import type { UsagePeriod, UsageSummary } from '@shared/types';
 
 // =============================================================================
@@ -197,15 +199,24 @@ const FractionBar = ({
 const PROJECT_DEFAULT_LIMIT = 8;
 const SESSION_DEFAULT_LIMIT = 10;
 
+interface SelectedProject {
+  projectId: string;
+  projectName: string;
+  projectPath: string;
+}
+
 export const UsageDashboard = (): React.JSX.Element => {
   const [summary, setSummary] = useState<UsageSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showAllProjects, setShowAllProjects] = useState(false);
   const [showAllSessions, setShowAllSessions] = useState(false);
+  const [selectedProject, setSelectedProject] = useState<SelectedProject | null>(null);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset loading state on mount, batched by React 18
     setLoading(true);
+
     setError(null);
 
     void api.usage
@@ -219,6 +230,18 @@ export const UsageDashboard = (): React.JSX.Element => {
         setLoading(false);
       });
   }, []);
+
+  // ── Project analytics panel ───────────────────────────────────────────────
+  if (selectedProject) {
+    return (
+      <ProjectAnalyticsPanel
+        projectId={selectedProject.projectId}
+        projectName={selectedProject.projectName}
+        projectPath={selectedProject.projectPath}
+        onBack={() => setSelectedProject(null)}
+      />
+    );
+  }
 
   // ── Loading ──────────────────────────────────────────────────────────────
   if (loading) {
@@ -334,7 +357,17 @@ export const UsageDashboard = (): React.JSX.Element => {
             <div className="space-y-3">
               {(showAllProjects ? byProject : byProject.slice(0, PROJECT_DEFAULT_LIMIT)).map(
                 (proj) => (
-                  <div key={proj.projectId} className="flex flex-col gap-1">
+                  <button
+                    key={proj.projectId}
+                    className="flex w-full flex-col gap-1 rounded-lg px-2 py-1 text-left transition-colors hover:bg-surface-raised"
+                    onClick={() =>
+                      setSelectedProject({
+                        projectId: proj.projectId,
+                        projectName: proj.projectName,
+                        projectPath: proj.projectPath,
+                      })
+                    }
+                  >
                     <div className="flex items-center justify-between">
                       <span
                         className="truncate text-sm font-medium"
@@ -382,7 +415,7 @@ export const UsageDashboard = (): React.JSX.Element => {
                         total
                       </span>
                     </div>
-                  </div>
+                  </button>
                 )
               )}
             </div>

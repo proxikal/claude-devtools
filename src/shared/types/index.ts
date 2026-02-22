@@ -21,5 +21,8 @@ export type * from './visualization';
 // Re-export usage/token types
 export type * from './usage';
 
+// Re-export project analytics types
+export type * from './projectAnalytics';
+
 // Re-export API types (ElectronAPI, ConfigAPI, etc.)
 export type * from './api';

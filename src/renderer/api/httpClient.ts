@@ -591,6 +591,10 @@ export class HttpAPIClient implements ElectronAPI {
   usage = {
     getSummary: (): Promise<import('@shared/types/usage').UsageSummary> =>
       this.get('/api/usage/summary'),
+    getProjectAnalytics: (
+      projectId: string
+    ): Promise<import('@shared/types/projectAnalytics').ProjectAnalyticsSummary | null> =>
+      this.get(`/api/usage/project-analytics/${encodeURIComponent(projectId)}`),
   };
 
   // HTTP Server API — in browser mode, server is already running (we're using it)

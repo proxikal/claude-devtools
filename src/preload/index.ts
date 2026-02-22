@@ -28,6 +28,7 @@ import {
   WINDOW_MINIMIZE,
 } from './constants/ipcChannels';
 import {
+  ANALYTICS_GET_PROJECT,
   CONFIG_ADD_IGNORE_REGEX,
   CONFIG_ADD_IGNORE_REPOSITORY,
   CONFIG_ADD_TRIGGER,
@@ -457,6 +458,11 @@ const electronAPI: ElectronAPI = {
     getSummary: async () => {
       return ipcRenderer.invoke(USAGE_GET_SUMMARY) as Promise<
         import('@shared/types/usage').UsageSummary
+      >;
+    },
+    getProjectAnalytics: async (projectId: string) => {
+      return ipcRenderer.invoke(ANALYTICS_GET_PROJECT, projectId) as Promise<
+        import('@shared/types/projectAnalytics').ProjectAnalyticsSummary | null
       >;
     },
   },
