@@ -30,6 +30,7 @@ export interface SafeConfig {
     theme: 'dark' | 'light' | 'system';
     defaultTab: 'dashboard' | 'last-session';
     claudeRootPath: string | null;
+    autoExpandAIGroups: boolean;
     autoExpandTools: string[];
   };
   notifications: {
@@ -155,6 +156,7 @@ export function useSettingsConfig(): UseSettingsConfigReturn {
         theme: displayConfig?.general?.theme ?? 'dark',
         defaultTab: displayConfig?.general?.defaultTab ?? 'dashboard',
         claudeRootPath: displayConfig?.general?.claudeRootPath ?? null,
+        autoExpandAIGroups: displayConfig?.general?.autoExpandAIGroups ?? false,
         autoExpandTools: displayConfig?.general?.autoExpandTools ?? [],
       },
       notifications: {

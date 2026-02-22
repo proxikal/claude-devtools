@@ -16,6 +16,7 @@ import { ToolAutoExpandModal } from '../components/ToolAutoExpandModal';
 import type { SafeConfig } from '../hooks/useSettingsConfig';
 import type { ClaudeRootInfo, WslClaudeRootCandidate } from '@shared/types';
 import type { HttpServerStatus } from '@shared/types/api';
+import type { AppConfig } from '@shared/types/notifications';
 
 // Theme options
 const THEME_OPTIONS = [
@@ -27,7 +28,7 @@ const THEME_OPTIONS = [
 interface GeneralSectionProps {
   readonly safeConfig: SafeConfig;
   readonly saving: boolean;
-  readonly onGeneralToggle: (key: 'launchAtLogin' | 'showDockIcon', value: boolean) => void;
+  readonly onGeneralToggle: (key: keyof AppConfig['general'], value: boolean) => void;
   readonly onThemeChange: (value: 'dark' | 'light' | 'system') => void;
   readonly onAutoExpandToolsChange: (tools: string[]) => void;
 }
@@ -287,6 +288,16 @@ export const GeneralSection = ({
           value={safeConfig.general.theme}
           options={THEME_OPTIONS}
           onChange={onThemeChange}
+          disabled={saving}
+        />
+      </SettingRow>
+      <SettingRow
+        label="Expand AI responses by default"
+        description="Automatically expand each response turn when opening a transcript or receiving a new message"
+      >
+        <SettingsToggle
+          enabled={safeConfig.general.autoExpandAIGroups}
+          onChange={(v) => onGeneralToggle('autoExpandAIGroups', v)}
           disabled={saving}
         />
       </SettingRow>
