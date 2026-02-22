@@ -14,7 +14,7 @@ import { horizontalListSortingStrategy, SortableContext } from '@dnd-kit/sortabl
 import { isElectronMode } from '@renderer/api';
 import { HEADER_ROW1_HEIGHT } from '@renderer/constants/layout';
 import { useStore } from '@renderer/store';
-import { Bell, PanelLeft, Plus, RefreshCw, Search, Settings } from 'lucide-react';
+import { Bell, PanelLeft, Plus, RefreshCw, Search, Settings, TrendingUp } from 'lucide-react';
 import { useShallow } from 'zustand/react/shallow';
 
 import { ExportDropdown } from '../common/ExportDropdown';
@@ -39,6 +39,7 @@ export const TabBar = ({ paneId }: TabBarProps): React.JSX.Element => {
     setSelectedTabIds,
     clearTabSelection,
     openDashboard,
+    openSpendDashboard,
     fetchSessionDetail,
     fetchSessions,
     openCommandPalette,
@@ -66,6 +67,7 @@ export const TabBar = ({ paneId }: TabBarProps): React.JSX.Element => {
       setSelectedTabIds: s.setSelectedTabIds,
       clearTabSelection: s.clearTabSelection,
       openDashboard: s.openDashboard,
+      openSpendDashboard: s.openSpendDashboard,
       fetchSessionDetail: s.fetchSessionDetail,
       fetchSessions: s.fetchSessions,
       openCommandPalette: s.openCommandPalette,
@@ -104,6 +106,7 @@ export const TabBar = ({ paneId }: TabBarProps): React.JSX.Element => {
   const [newTabHover, setNewTabHover] = useState(false);
   const [searchHover, setSearchHover] = useState(false);
   const [notificationsHover, setNotificationsHover] = useState(false);
+  const [spendHover, setSpendHover] = useState(false);
   const [settingsHover, setSettingsHover] = useState(false);
 
   // Context menu state
@@ -412,6 +415,21 @@ export const TabBar = ({ paneId }: TabBarProps): React.JSX.Element => {
               {unreadCount > 99 ? '99+' : unreadCount}
             </span>
           )}
+        </button>
+
+        {/* Spend dashboard button */}
+        <button
+          onClick={openSpendDashboard}
+          onMouseEnter={() => setSpendHover(true)}
+          onMouseLeave={() => setSpendHover(false)}
+          className="rounded-md p-2 transition-colors"
+          style={{
+            color: spendHover ? 'var(--color-text)' : 'var(--color-text-muted)',
+            backgroundColor: spendHover ? 'var(--color-surface-raised)' : 'transparent',
+          }}
+          title="Usage Dashboard"
+        >
+          <TrendingUp className="size-4" />
         </button>
 
         {/* Settings gear icon */}

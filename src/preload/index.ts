@@ -52,6 +52,7 @@ import {
   CONFIG_UNPIN_SESSION,
   CONFIG_UPDATE,
   CONFIG_UPDATE_TRIGGER,
+  SPEND_GET_SUMMARY,
 } from './constants/ipcChannels';
 
 import type {
@@ -170,8 +171,7 @@ const electronAPI: ElectronAPI = {
     ipcRenderer.invoke('read-mentioned-file', absolutePath, projectRoot, maxTokens),
 
   // Agent config reading
-  readAgentConfigs: (projectRoot: string) =>
-    ipcRenderer.invoke('read-agent-configs', projectRoot),
+  readAgentConfigs: (projectRoot: string) => ipcRenderer.invoke('read-agent-configs', projectRoot),
 
   // Notifications API
   notifications: {
@@ -449,6 +449,15 @@ const electronAPI: ElectronAPI = {
           callback as (event: Electron.IpcRendererEvent, ...args: unknown[]) => void
         );
       };
+    },
+  },
+
+  // Spend / Cost API
+  spend: {
+    getSummary: async () => {
+      return ipcRenderer.invoke(SPEND_GET_SUMMARY) as Promise<
+        import('@shared/types/spend').SpendSummary
+      >;
     },
   },
 

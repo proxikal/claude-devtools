@@ -46,6 +46,7 @@ export interface TabSlice {
   closeTab: (tabId: string) => void;
   setActiveTab: (tabId: string) => void;
   openDashboard: () => void;
+  openSpendDashboard: () => void;
   getActiveTab: () => Tab | null;
   isSessionOpen: (sessionId: string) => boolean;
   enqueueTabNavigation: (tabId: string, request: TabNavigationRequest) => void;
@@ -368,6 +369,37 @@ export const createTabSlice: StateCreator<AppState, [], [], TabSlice> = (set, ge
       id: crypto.randomUUID(),
       type: 'dashboard',
       label: 'Dashboard',
+      createdAt: Date.now(),
+    };
+
+    const updatedPane = {
+      ...focusedPane,
+      tabs: [...focusedPane.tabs, newTab],
+      activeTabId: newTab.id,
+    };
+    const newLayout = updatePane(paneLayout, updatedPane);
+    set(syncFromLayout(newLayout));
+  },
+
+  // Open a spend dashboard tab (or focus existing one) in the focused pane
+  openSpendDashboard: () => {
+    const state = get();
+    const { paneLayout } = state;
+    const focusedPane = findPane(paneLayout, paneLayout.focusedPaneId);
+    if (!focusedPane) return;
+
+    // Focus existing spend tab if already open
+    const existing = focusedPane.tabs.find((t) => t.type === 'spend');
+    if (existing) {
+      const updatedPane = { ...focusedPane, activeTabId: existing.id };
+      set(syncFromLayout(updatePane(paneLayout, updatedPane)));
+      return;
+    }
+
+    const newTab: Tab = {
+      id: crypto.randomUUID(),
+      type: 'spend',
+      label: 'Usage',
       createdAt: Date.now(),
     };
 

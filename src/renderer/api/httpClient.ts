@@ -587,6 +587,12 @@ export class HttpAPIClient implements ElectronAPI {
       ),
   };
 
+  // Spend API — forward to HTTP server endpoint
+  spend = {
+    getSummary: (): Promise<import('@shared/types/spend').SpendSummary> =>
+      this.get('/api/spend/summary'),
+  };
+
   // HTTP Server API — in browser mode, server is already running (we're using it)
   httpServer: HttpServerAPI = {
     start: (): Promise<HttpServerStatus> =>

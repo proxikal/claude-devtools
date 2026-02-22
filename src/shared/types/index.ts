@@ -18,5 +18,8 @@ export * from './notifications';
 // Re-export visualization types (WaterfallData, WaterfallItem)
 export type * from './visualization';
 
+// Re-export spend/cost types
+export type * from './spend';
+
 // Re-export API types (ElectronAPI, ConfigAPI, etc.)
 export type * from './api';
