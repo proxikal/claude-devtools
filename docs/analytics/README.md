@@ -55,6 +55,7 @@ any of its foundational pieces.
 | [panel-layout.md](./panel-layout.md) | What the user actually sees — full mockup |
 | [quality-gates.md](./quality-gates.md) | The commands that must pass. Non-negotiable. |
 | [agent-handoff.md](./agent-handoff.md) | How to pick up mid-session without making a mess |
+| [decisions.md](./decisions.md) | Design decisions — read before inventing something new |
 | [phases/phase-1-data-pipeline.md](./phases/phase-1-data-pipeline.md) | Build the IPC handler and data aggregation |
 | [phases/phase-2-panel-shell.md](./phases/phase-2-panel-shell.md) | Click-to-open panel, back navigation, loading state |
 | [phases/phase-3-activity-chart.md](./phases/phase-3-activity-chart.md) | Summary header, activity chart, peak moments |
