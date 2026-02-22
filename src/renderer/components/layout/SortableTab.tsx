@@ -39,7 +39,7 @@ const TAB_ICONS = {
   notifications: Bell,
   settings: Settings,
   session: FileText,
-  spend: TrendingUp,
+  usage: TrendingUp,
 } as const;
 
 export const SortableTab = ({

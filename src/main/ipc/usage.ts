@@ -1,37 +1,37 @@
 /**
- * IPC Handlers for Spend/Cost Summary.
+ * IPC Handlers for Usage Summary.
  *
  * Handler:
- * - get-spend-summary: Aggregate cost data across all projects and sessions.
+ * - get-usage-summary: Aggregate token/cost data across all projects and sessions.
  *
- * Strategy: Single streaming pass per JSONL file using analyzeSessionCostData().
+ * Strategy: Single streaming pass per JSONL file using analyzeSessionUsageData().
  * Results are cached in memory for 2 minutes to keep repeated opens fast.
  */
 
-import { analyzeSessionCostData } from '@main/utils/jsonl';
-import { estimateCostUsd, getModelLabel } from '@shared/utils/costEstimator';
+import { analyzeSessionUsageData, type SessionModelUsage } from '@main/utils/jsonl';
 import { createLogger } from '@shared/utils/logger';
+import { estimateCostUsd, getModelLabel } from '@shared/utils/usageEstimator';
 import * as path from 'path';
 
 import type { ServiceContextRegistry } from '../services';
 import type {
-  DaySpend,
-  ModelSpend,
-  ProjectSpend,
-  SessionSpend,
-  SpendPeriod,
-  SpendSummary,
-} from '@shared/types/spend';
+  DayUsage,
+  ModelUsage,
+  ProjectUsage,
+  SessionUsage,
+  UsagePeriod,
+  UsageSummary,
+} from '@shared/types';
 import type { IpcMain } from 'electron';
 
-const logger = createLogger('IPC:spend');
+const logger = createLogger('IPC:usage');
 
 // =============================================================================
 // Module-level cache (2 min TTL)
 // =============================================================================
 
 interface CacheEntry {
-  summary: SpendSummary;
+  summary: UsageSummary;
   expiresAt: number;
 }
 
@@ -44,31 +44,35 @@ const CACHE_TTL_MS = 2 * 60 * 1000;
 
 let registry: ServiceContextRegistry;
 
-export function initializeSpendHandlers(contextRegistry: ServiceContextRegistry): void {
+export function initializeUsageHandlers(contextRegistry: ServiceContextRegistry): void {
   registry = contextRegistry;
 }
 
-export function registerSpendHandlers(ipcMain: IpcMain): void {
+export function registerUsageHandlers(ipcMain: IpcMain): void {
   cachedSummary = null; // Clear stale cache on each app startup
-  ipcMain.handle('get-spend-summary', handleGetSpendSummary);
-  logger.info('Spend handlers registered');
+  ipcMain.handle('get-usage-summary', handleGetUsageSummary);
+  logger.info('Usage handlers registered');
 }
 
-export function removeSpendHandlers(ipcMain: IpcMain): void {
-  ipcMain.removeHandler('get-spend-summary');
+export function removeUsageHandlers(ipcMain: IpcMain): void {
+  ipcMain.removeHandler('get-usage-summary');
 }
 
 // =============================================================================
 // Handler
 // =============================================================================
 
-async function handleGetSpendSummary(): Promise<SpendSummary> {
-  // Return cached if still fresh
-  if (cachedSummary && Date.now() < cachedSummary.expiresAt) {
+async function handleGetUsageSummary(): Promise<UsageSummary> {
+  // Return cached if still fresh and data has totalTokens (cache bust after schema change)
+  if (
+    cachedSummary &&
+    Date.now() < cachedSummary.expiresAt &&
+    cachedSummary.summary.byProject[0]?.totalTokens !== undefined
+  ) {
     return cachedSummary.summary;
   }
 
-  const summary = await computeSpendSummary();
+  const summary = await computeUsageSummary();
   cachedSummary = { summary, expiresAt: Date.now() + CACHE_TTL_MS };
   return summary;
 }
@@ -81,23 +85,26 @@ interface RawSessionCost {
   sessionId: string;
   projectId: string;
   projectName: string;
+  projectPath: string;
   model: string;
+  modelBreakdown: Record<string, SessionModelUsage>;
   costUsd: number;
   outputTokens: number;
+  totalTokens: number;
   date: string;
   firstMessage?: string;
 }
 
-async function computeSpendSummary(): Promise<SpendSummary> {
+async function computeUsageSummary(): Promise<UsageSummary> {
   const ctx = registry.getActive();
   const projectsDir = ctx.projectScanner.getProjectsDir();
-  let projects: { id: string; name: string; sessions: string[] }[];
+  let projects: { id: string; name: string; path: string; sessions: string[] }[];
 
   try {
     projects = await ctx.projectScanner.scan();
   } catch (err) {
-    logger.error('Failed to scan projects for spend summary', err);
-    return emptySpendSummary();
+    logger.error('Failed to scan projects for usage summary', err);
+    return emptyUsageSummary();
   }
 
   // Process sessions with bounded concurrency
@@ -108,29 +115,38 @@ async function computeSpendSummary(): Promise<SpendSummary> {
     const tasks = project.sessions.map((sessionId) => async () => {
       const filePath = path.join(projectsDir, project.id, `${sessionId}.jsonl`);
       try {
-        const costData = await analyzeSessionCostData(filePath);
-        if (costData.outputTokens === 0 && costData.inputTokens === 0) return;
+        const usageData = await analyzeSessionUsageData(filePath);
+        if (usageData.outputTokens === 0 && usageData.inputTokens === 0) return;
 
         const costUsd = estimateCostUsd(
-          costData.inputTokens,
-          costData.outputTokens,
-          costData.cacheReadTokens,
-          costData.cacheCreationTokens,
-          costData.model
+          usageData.inputTokens,
+          usageData.outputTokens,
+          usageData.cacheReadTokens,
+          usageData.cacheCreationTokens,
+          usageData.model
         );
+
+        const totalTokens =
+          usageData.outputTokens +
+          usageData.inputTokens +
+          usageData.cacheReadTokens +
+          usageData.cacheCreationTokens;
 
         raw.push({
           sessionId,
           projectId: project.id,
           projectName: project.name,
-          model: costData.model,
+          projectPath: project.path,
+          model: usageData.model,
+          modelBreakdown: usageData.modelBreakdown,
           costUsd,
-          outputTokens: costData.outputTokens,
-          date: costData.date,
-          firstMessage: costData.firstMessage,
+          outputTokens: usageData.outputTokens,
+          totalTokens,
+          date: usageData.date,
+          firstMessage: usageData.firstMessage,
         });
       } catch (err) {
-        logger.warn(`Failed to analyze cost for session ${sessionId}`, err);
+        logger.warn(`Failed to analyze usage for session ${sessionId}`, err);
       }
     });
 
@@ -151,29 +167,36 @@ function toIsoDate(unixMs: number): string {
   return new Date(unixMs).toISOString().slice(0, 10);
 }
 
-function aggregate(raw: RawSessionCost[]): SpendSummary {
+function aggregate(raw: RawSessionCost[]): UsageSummary {
   const now = Date.now();
   const todayStr = toIsoDate(now);
   const weekAgo = now - 7 * 24 * 60 * 60 * 1000;
   const monthAgo = now - 30 * 24 * 60 * 60 * 1000;
   const day30AgoStr = toIsoDate(monthAgo);
 
-  const emptyPeriod = (): SpendPeriod => ({ costUsd: 0, sessions: 0, outputTokens: 0 });
+  const emptyPeriod = (): UsagePeriod => ({ costUsd: 0, sessions: 0, outputTokens: 0 });
   const today = emptyPeriod();
   const week = emptyPeriod();
   const month = emptyPeriod();
   const allTime = emptyPeriod();
 
-  const dayMap = new Map<string, DaySpend>();
+  const dayMap = new Map<string, DayUsage>();
   const projectMap = new Map<
     string,
-    { name: string; costUsd: number; sessions: number; outputTokens: number }
+    {
+      name: string;
+      projectPath: string;
+      costUsd: number;
+      sessions: number;
+      outputTokens: number;
+      totalTokens: number;
+    }
   >();
   const modelMap = new Map<
     string,
     { label: string; costUsd: number; sessions: number; outputTokens: number }
   >();
-  const topSessions: SessionSpend[] = [];
+  const topSessions: SessionUsage[] = [];
 
   for (const s of raw) {
     const dateStr = s.date || todayStr;
@@ -217,27 +240,37 @@ function aggregate(raw: RawSessionCost[]): SpendSummary {
     // By project
     const proj = projectMap.get(s.projectId) ?? {
       name: s.projectName,
+      projectPath: s.projectPath,
       costUsd: 0,
       sessions: 0,
       outputTokens: 0,
+      totalTokens: 0,
     };
     proj.costUsd += s.costUsd;
     proj.sessions += 1;
     proj.outputTokens += s.outputTokens;
+    proj.totalTokens += s.totalTokens;
     projectMap.set(s.projectId, proj);
 
-    // By model
-    const modelKey = s.model || 'unknown';
-    const mdl = modelMap.get(modelKey) ?? {
-      label: getModelLabel(s.model),
-      costUsd: 0,
-      sessions: 0,
-      outputTokens: 0,
-    };
-    mdl.costUsd += s.costUsd;
-    mdl.sessions += 1;
-    mdl.outputTokens += s.outputTokens;
-    modelMap.set(modelKey, mdl);
+    // By model — use per-model breakdown for accurate attribution
+    for (const [modelKey, mb] of Object.entries(s.modelBreakdown)) {
+      const mdl = modelMap.get(modelKey) ?? {
+        label: getModelLabel(modelKey),
+        costUsd: 0,
+        sessions: 0,
+        outputTokens: 0,
+      };
+      mdl.costUsd += estimateCostUsd(
+        mb.inputTokens,
+        mb.outputTokens,
+        mb.cacheReadTokens,
+        mb.cacheCreationTokens,
+        modelKey
+      );
+      mdl.sessions += 1;
+      mdl.outputTokens += mb.outputTokens;
+      modelMap.set(modelKey, mdl);
+    }
 
     // Top sessions
     topSessions.push({
@@ -246,35 +279,59 @@ function aggregate(raw: RawSessionCost[]): SpendSummary {
       projectName: s.projectName,
       costUsd: s.costUsd,
       outputTokens: s.outputTokens,
+      totalTokens: s.totalTokens,
       date: dateStr,
       firstMessage: s.firstMessage,
     });
   }
 
   // Build daily array (ascending, last 30 days)
-  const daily: DaySpend[] = Array.from(dayMap.values()).sort((a, b) =>
+  const daily: DayUsage[] = Array.from(dayMap.values()).sort((a, b) =>
     a.date.localeCompare(b.date)
   );
 
-  // Build project array — sorted by output tokens, fraction relative to top project
+  // Build project array — sorted by total tokens, each fraction independently normalized
   const maxProjectTokens = Math.max(
+    ...Array.from(projectMap.values()).map((p) => p.totalTokens),
+    1
+  );
+  const maxOutputTokens = Math.max(
     ...Array.from(projectMap.values()).map((p) => p.outputTokens),
     1
   );
-  const byProject: ProjectSpend[] = Array.from(projectMap.entries())
-    .map(([id, p]) => ({
-      projectId: id,
-      projectName: p.name,
-      costUsd: p.costUsd,
-      sessions: p.sessions,
-      outputTokens: p.outputTokens,
-      fraction: p.outputTokens / maxProjectTokens,
-    }))
-    .sort((a, b) => b.outputTokens - a.outputTokens);
+
+  // Detect name collisions and disambiguate with parent folder
+  const nameCounts = new Map<string, number>();
+  for (const p of projectMap.values()) {
+    nameCounts.set(p.name, (nameCounts.get(p.name) ?? 0) + 1);
+  }
+
+  const byProject: ProjectUsage[] = Array.from(projectMap.entries())
+    .map(([id, p]) => {
+      let displayName = p.name;
+      if ((nameCounts.get(p.name) ?? 0) > 1) {
+        const parentSegment = path.basename(path.dirname(p.projectPath));
+        if (parentSegment && parentSegment !== '.') {
+          displayName = `${p.name} · ${parentSegment}`;
+        }
+      }
+      return {
+        projectId: id,
+        projectName: displayName,
+        projectPath: p.projectPath,
+        costUsd: p.costUsd,
+        sessions: p.sessions,
+        outputTokens: p.outputTokens,
+        totalTokens: p.totalTokens,
+        outputFraction: p.outputTokens / maxOutputTokens,
+        fraction: p.totalTokens / maxProjectTokens,
+      };
+    })
+    .sort((a, b) => b.totalTokens - a.totalTokens);
 
   // Build model array — sorted by output tokens, fraction of total output tokens
   const maxModelTokens = Math.max(...Array.from(modelMap.values()).map((m) => m.outputTokens), 1);
-  const byModel: ModelSpend[] = Array.from(modelMap.entries())
+  const byModel: ModelUsage[] = Array.from(modelMap.entries())
     .map(([model, m]) => ({
       model,
       label: m.label,
@@ -285,21 +342,21 @@ function aggregate(raw: RawSessionCost[]): SpendSummary {
     }))
     .sort((a, b) => b.outputTokens - a.outputTokens);
 
-  // Top 10 sessions by output tokens
-  topSessions.sort((a, b) => b.outputTokens - a.outputTokens);
+  // Top sessions by total tokens (reflects true heaviness)
+  topSessions.sort((a, b) => b.totalTokens - a.totalTokens);
 
   return {
     totals: { today, week, month, allTime },
     daily,
     byProject,
     byModel,
-    topSessions: topSessions.slice(0, 10),
+    topSessions: topSessions.slice(0, 25),
     generatedAt: Date.now(),
   };
 }
 
-function emptySpendSummary(): SpendSummary {
-  const emptyPeriod = (): SpendPeriod => ({ costUsd: 0, sessions: 0, outputTokens: 0 });
+function emptyUsageSummary(): UsageSummary {
+  const emptyPeriod = (): UsagePeriod => ({ costUsd: 0, sessions: 0, outputTokens: 0 });
   return {
     totals: {
       today: emptyPeriod(),

@@ -8,7 +8,7 @@ import { TabUIProvider } from '@renderer/contexts/TabUIContext';
 import { DashboardView } from '../dashboard/DashboardView';
 import { NotificationsView } from '../notifications/NotificationsView';
 import { SettingsView } from '../settings/SettingsView';
-import { SpendDashboard } from '../spend/SpendDashboard';
+import { UsageDashboard } from '../usage/UsageDashboard';
 
 import { SessionTabContent } from './SessionTabContent';
 
@@ -43,7 +43,7 @@ export const PaneContent = ({ pane }: PaneContentProps): React.JSX.Element => {
             {tab.type === 'dashboard' && <DashboardView />}
             {tab.type === 'notifications' && <NotificationsView />}
             {tab.type === 'settings' && <SettingsView />}
-            {tab.type === 'spend' && <SpendDashboard />}
+            {tab.type === 'usage' && <UsageDashboard />}
             {tab.type === 'session' && (
               <TabUIProvider tabId={tab.id}>
                 <SessionTabContent tab={tab} isActive={isActive} />

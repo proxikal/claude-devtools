@@ -269,9 +269,18 @@ export function calculateMetrics(messages: ParsedMessage[]): SessionMetrics {
 // Session Cost Analysis
 // =============================================================================
 
+export interface SessionModelUsage {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+}
+
 export interface SessionCostData {
-  /** Primary model seen in this session (from first assistant message with model field) */
+  /** Primary model (first seen) — used as session-level label */
   model: string;
+  /** Per-model token breakdown — accurate even when models switch mid-session */
+  modelBreakdown: Record<string, SessionModelUsage>;
   inputTokens: number;
   outputTokens: number;
   cacheReadTokens: number;
@@ -284,15 +293,16 @@ export interface SessionCostData {
 
 /**
  * Streaming single-pass cost data extraction from a session JSONL file.
- * Reads only what is needed for spend analysis: model, token counts, date.
+ * Reads only what is needed for usage analysis: model, token counts, date.
  * Much faster than full parseJsonlFile for large files.
  */
-export async function analyzeSessionCostData(
+export async function analyzeSessionUsageData(
   filePath: string,
   fsProvider: FileSystemProvider = defaultProvider
 ): Promise<SessionCostData> {
   const empty: SessionCostData = {
     model: '',
+    modelBreakdown: {},
     inputTokens: 0,
     outputTokens: 0,
     cacheReadTokens: 0,
@@ -305,11 +315,12 @@ export async function analyzeSessionCostData(
   const fileStream = fsProvider.createReadStream(filePath, { encoding: 'utf8' });
   const rl = readline.createInterface({ input: fileStream, crlfDelay: Infinity });
 
-  let model = '';
+  let primaryModel = '';
   let inputTokens = 0;
   let outputTokens = 0;
   let cacheReadTokens = 0;
   let cacheCreationTokens = 0;
+  const modelBreakdown: Record<string, SessionModelUsage> = {};
   let date = '';
   let firstMessage: string | undefined;
 
@@ -326,31 +337,45 @@ export async function analyzeSessionCostData(
     const type = entry.type as string | undefined;
 
     if (type === 'assistant') {
-      // message field contains the Anthropic API response object
       const msg = entry.message as Record<string, unknown> | undefined;
+      const msgModel = typeof msg?.model === 'string' ? msg.model : 'unknown';
 
-      // Grab model from first assistant message
-      if (!model && typeof msg?.model === 'string') {
-        model = msg.model;
+      // Track primary model (first seen)
+      if (!primaryModel && msgModel !== 'unknown') {
+        primaryModel = msgModel;
       }
 
-      // Sum usage (nested inside message)
+      // Sum usage into totals and per-model breakdown
       const usage = msg?.usage as Record<string, number> | undefined;
       if (usage) {
-        inputTokens += usage.input_tokens ?? 0;
-        outputTokens += usage.output_tokens ?? 0;
-        cacheReadTokens += usage.cache_read_input_tokens ?? 0;
-        cacheCreationTokens += usage.cache_creation_input_tokens ?? 0;
+        const inp = usage.input_tokens ?? 0;
+        const out = usage.output_tokens ?? 0;
+        const cr = usage.cache_read_input_tokens ?? 0;
+        const cw = usage.cache_creation_input_tokens ?? 0;
+
+        inputTokens += inp;
+        outputTokens += out;
+        cacheReadTokens += cr;
+        cacheCreationTokens += cw;
+
+        const mb = modelBreakdown[msgModel] ?? {
+          inputTokens: 0,
+          outputTokens: 0,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
+        };
+        mb.inputTokens += inp;
+        mb.outputTokens += out;
+        mb.cacheReadTokens += cr;
+        mb.cacheCreationTokens += cw;
+        modelBreakdown[msgModel] = mb;
       }
 
-      // Grab date from timestamp of first assistant message
       if (!date && typeof entry.timestamp === 'string') {
-        date = entry.timestamp.slice(0, 10); // YYYY-MM-DD
+        date = entry.timestamp.slice(0, 10);
       }
     }
 
-    // Grab first real user message for display
-    // isMeta is at the entry level, message.content holds the text
     if (!firstMessage && type === 'user') {
       const isMeta = entry.isMeta as boolean | undefined;
       if (!isMeta) {
@@ -364,7 +389,8 @@ export async function analyzeSessionCostData(
   }
 
   return {
-    model,
+    model: primaryModel,
+    modelBreakdown,
     inputTokens,
     outputTokens,
     cacheReadTokens,
