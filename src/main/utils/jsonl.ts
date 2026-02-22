@@ -326,13 +326,16 @@ export async function analyzeSessionCostData(
     const type = entry.type as string | undefined;
 
     if (type === 'assistant') {
+      // message field contains the Anthropic API response object
+      const msg = entry.message as Record<string, unknown> | undefined;
+
       // Grab model from first assistant message
-      if (!model && typeof entry.model === 'string') {
-        model = entry.model;
+      if (!model && typeof msg?.model === 'string') {
+        model = msg.model;
       }
 
-      // Sum usage
-      const usage = entry.usage as Record<string, number> | undefined;
+      // Sum usage (nested inside message)
+      const usage = msg?.usage as Record<string, number> | undefined;
       if (usage) {
         inputTokens += usage.input_tokens ?? 0;
         outputTokens += usage.output_tokens ?? 0;
@@ -347,11 +350,12 @@ export async function analyzeSessionCostData(
     }
 
     // Grab first real user message for display
+    // isMeta is at the entry level, message.content holds the text
     if (!firstMessage && type === 'user') {
-      const content = entry.message as Record<string, unknown> | undefined;
-      const isMeta = content?.isMeta;
+      const isMeta = entry.isMeta as boolean | undefined;
       if (!isMeta) {
-        const msgContent = content?.content;
+        const msg = entry.message as Record<string, unknown> | undefined;
+        const msgContent = msg?.content;
         if (typeof msgContent === 'string' && msgContent.trim()) {
           firstMessage = msgContent.slice(0, 120);
         }
