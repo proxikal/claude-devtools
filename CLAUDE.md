@@ -1,3 +1,7 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
 # claude-devtools
 
 Electron app that visualizes Claude Code session execution
@@ -11,17 +15,24 @@ Always use pnpm (not npm/yarn) for this project.
 - `pnpm install` - Install dependencies
 - `pnpm dev` - Dev server with hot reload
 - `pnpm build` - Production build
-- `pnpm typecheck` - Type checking
+- `pnpm fix` - Lint + format (auto-fix all style issues)
+- `pnpm check` - Typecheck + lint + test + build (full validation)
+- `pnpm quality` - Full check + format check + unused export detection (knip)
+- `pnpm typecheck` - Type checking only
 - `pnpm lint:fix` - Lint and auto-fix
 - `pnpm format` - Format code
 - `pnpm test` - Run all vitest tests
 - `pnpm test:watch` - Watch mode
+- `vitest run test/path/to/file.test.ts` - Run a single test file
 - `pnpm test:coverage` - Coverage report
 - `pnpm test:coverage:critical` - Critical path coverage
-- `pnpm test:chunks` - Chunk building tests
+- `pnpm test:chunks` - Chunk building tests (tsx scripts, not vitest)
 - `pnpm test:semantic` - Semantic step extraction tests
 - `pnpm test:noise` - Noise filtering tests
 - `pnpm test:task-filtering` - Task tool filtering tests
+- `pnpm standalone` - Run standalone (non-Electron) mode
+- `pnpm standalone:build` - Build standalone bundle
+- `pnpm standalone:start` - Start built standalone server
 
 ## Path Aliases
 Use path aliases for imports:

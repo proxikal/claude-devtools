@@ -17,6 +17,7 @@ export interface DaySpend {
   date: string;
   costUsd: number;
   sessions: number;
+  outputTokens: number;
 }
 
 export interface ProjectSpend {
