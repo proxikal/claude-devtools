@@ -401,6 +401,212 @@ export async function analyzeSessionUsageData(
 }
 
 // =============================================================================
+// Project Analytics — Time-Series Data
+// =============================================================================
+
+export interface SessionTimeSeriesData {
+  /** ISO date of session start: YYYY-MM-DD (empty if unavailable) */
+  date: string;
+  /** ISO timestamp of first message */
+  startTime: string;
+  /** ISO timestamp of last message */
+  endTime: string;
+  durationMs: number;
+  outputTokens: number;
+  totalTokens: number;
+  /** Primary model (first seen) */
+  model: string;
+  /** Per-model token breakdown (reuses SessionModelUsage) */
+  modelBreakdown: Record<string, SessionModelUsage>;
+  /** First real user message, truncated to 120 chars */
+  firstMessage: string;
+  /** True if isSidechain was set on any entry */
+  isSubagent: boolean;
+  /** Total tool_use blocks seen */
+  toolCallCount: number;
+  /** tool_use blocks where the matching tool_result contained an error */
+  toolFailureCount: number;
+  /** Hour (0–23) of session start, -1 if unavailable */
+  startHour: number;
+}
+
+/**
+ * Streaming single-pass extraction for project analytics.
+ * Returns per-session time-series metadata needed to build ProjectAnalyticsSummary.
+ */
+export async function analyzeSessionTimeSeriesData(
+  filePath: string,
+  fsProvider: FileSystemProvider = defaultProvider
+): Promise<SessionTimeSeriesData> {
+  const empty: SessionTimeSeriesData = {
+    date: '',
+    startTime: '',
+    endTime: '',
+    durationMs: 0,
+    outputTokens: 0,
+    totalTokens: 0,
+    model: '',
+    modelBreakdown: {},
+    firstMessage: '',
+    isSubagent: false,
+    toolCallCount: 0,
+    toolFailureCount: 0,
+    startHour: -1,
+  };
+
+  if (!(await fsProvider.exists(filePath))) return empty;
+
+  const fileStream = fsProvider.createReadStream(filePath, { encoding: 'utf8' });
+  const rl = readline.createInterface({ input: fileStream, crlfDelay: Infinity });
+
+  let primaryModel = '';
+  let outputTokens = 0;
+  let inputTokens = 0;
+  let cacheReadTokens = 0;
+  let cacheCreationTokens = 0;
+  const modelBreakdown: Record<string, SessionModelUsage> = {};
+  let firstTimestamp = '';
+  let lastTimestamp = '';
+  let firstMessage = '';
+  let isSubagent = false;
+  let toolCallCount = 0;
+  // Track tool_use IDs so we can detect error results
+  const pendingToolIds = new Set<string>();
+  let toolFailureCount = 0;
+
+  for await (const line of rl) {
+    if (!line.trim()) continue;
+
+    let entry: Record<string, unknown>;
+    try {
+      entry = JSON.parse(line) as Record<string, unknown>;
+    } catch {
+      continue;
+    }
+
+    const type = entry.type as string | undefined;
+    const timestamp = typeof entry.timestamp === 'string' ? entry.timestamp : '';
+
+    if (timestamp) {
+      if (!firstTimestamp) firstTimestamp = timestamp;
+      lastTimestamp = timestamp;
+    }
+
+    // Detect subagent sessions
+    if (!isSubagent && entry.isSidechain === true) {
+      isSubagent = true;
+    }
+
+    if (type === 'assistant') {
+      const msg = entry.message as Record<string, unknown> | undefined;
+      const msgModel = typeof msg?.model === 'string' ? msg.model : 'unknown';
+
+      if (!primaryModel && msgModel !== 'unknown') {
+        primaryModel = msgModel;
+      }
+
+      const usage = msg?.usage as Record<string, number> | undefined;
+      if (usage) {
+        const inp = usage.input_tokens ?? 0;
+        const out = usage.output_tokens ?? 0;
+        const cr = usage.cache_read_input_tokens ?? 0;
+        const cw = usage.cache_creation_input_tokens ?? 0;
+
+        outputTokens += out;
+        inputTokens += inp;
+        cacheReadTokens += cr;
+        cacheCreationTokens += cw;
+
+        const mb = modelBreakdown[msgModel] ?? {
+          inputTokens: 0,
+          outputTokens: 0,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
+        };
+        mb.inputTokens += inp;
+        mb.outputTokens += out;
+        mb.cacheReadTokens += cr;
+        mb.cacheCreationTokens += cw;
+        modelBreakdown[msgModel] = mb;
+      }
+
+      // Count tool_use blocks and record their IDs
+      const content = msg?.content;
+      if (Array.isArray(content)) {
+        for (const block of content as Record<string, unknown>[]) {
+          if (block.type === 'tool_use' && typeof block.id === 'string') {
+            toolCallCount++;
+            pendingToolIds.add(block.id);
+          }
+        }
+      }
+    }
+
+    // Detect tool_result failures in user messages
+    if (type === 'user') {
+      const isMeta = entry.isMeta as boolean | undefined;
+
+      // Check for tool result failure signals
+      const msg = entry.message as Record<string, unknown> | undefined;
+      const content = msg?.content;
+      if (Array.isArray(content)) {
+        for (const block of content as Record<string, unknown>[]) {
+          if (block.type === 'tool_result' && typeof block.tool_use_id === 'string') {
+            if (pendingToolIds.has(block.tool_use_id)) {
+              pendingToolIds.delete(block.tool_use_id);
+              // isError flag or content starting with 'Error' counts as failure
+              if (
+                block.is_error === true ||
+                (typeof block.content === 'string' && block.content.startsWith('Error'))
+              ) {
+                toolFailureCount++;
+              }
+            }
+          }
+        }
+      }
+
+      // Capture first real user message
+      if (!firstMessage && !isMeta) {
+        if (typeof content === 'string' && content.trim()) {
+          firstMessage = content.slice(0, 120);
+        } else if (Array.isArray(content)) {
+          for (const block of content as Record<string, unknown>[]) {
+            if (block.type === 'text' && typeof block.text === 'string' && block.text.trim()) {
+              firstMessage = block.text.slice(0, 120);
+              break;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  const date = firstTimestamp ? firstTimestamp.slice(0, 10) : '';
+  const startMs = firstTimestamp ? new Date(firstTimestamp).getTime() : 0;
+  const endMs = lastTimestamp ? new Date(lastTimestamp).getTime() : 0;
+  const durationMs = startMs > 0 && endMs > startMs ? endMs - startMs : 0;
+  const startHour = firstTimestamp ? new Date(firstTimestamp).getHours() : -1;
+  const totalTokens = outputTokens + inputTokens + cacheReadTokens + cacheCreationTokens;
+
+  return {
+    date,
+    startTime: firstTimestamp,
+    endTime: lastTimestamp,
+    durationMs,
+    outputTokens,
+    totalTokens,
+    model: primaryModel,
+    modelBreakdown,
+    firstMessage,
+    isSubagent,
+    toolCallCount,
+    toolFailureCount,
+    startHour,
+  };
+}
+
+// =============================================================================
 // Utility Functions
 // =============================================================================
 

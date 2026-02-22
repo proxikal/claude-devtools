@@ -430,6 +430,9 @@ export interface ElectronAPI {
   // Usage API
   usage: {
     getSummary: () => Promise<import('./usage').UsageSummary>;
+    getProjectAnalytics: (
+      projectId: string
+    ) => Promise<import('./projectAnalytics').ProjectAnalyticsSummary | null>;
   };
 }
 

@@ -178,3 +178,6 @@ export const WINDOW_IS_MAXIMIZED = 'window:isMaximized';
 
 /** Get aggregated usage summary across all projects */
 export const USAGE_GET_SUMMARY = 'get-usage-summary';
+
+/** Get detailed analytics for a single project */
+export const ANALYTICS_GET_PROJECT = 'get-project-analytics';
