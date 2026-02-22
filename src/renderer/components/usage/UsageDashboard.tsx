@@ -214,7 +214,9 @@ export const UsageDashboard = (): React.JSX.Element => {
   const [selectedProject, setSelectedProject] = useState<SelectedProject | null>(null);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset loading state on mount, batched by React 18
     setLoading(true);
+
     setError(null);
 
     void api.usage
@@ -357,12 +359,7 @@ export const UsageDashboard = (): React.JSX.Element => {
                 (proj) => (
                   <button
                     key={proj.projectId}
-                    className="flex w-full flex-col gap-1 rounded-lg px-2 py-1 text-left transition-colors"
-                    style={{ backgroundColor: 'transparent' }}
-                    onMouseEnter={(e) =>
-                      (e.currentTarget.style.backgroundColor = 'var(--color-surface-raised)')
-                    }
-                    onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+                    className="flex w-full flex-col gap-1 rounded-lg px-2 py-1 text-left transition-colors hover:bg-surface-raised"
                     onClick={() =>
                       setSelectedProject({
                         projectId: proj.projectId,
