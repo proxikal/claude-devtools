@@ -31,6 +31,7 @@ interface SettingsHandlers {
   handleGeneralToggle: (key: keyof AppConfig['general'], value: boolean) => void;
   handleThemeChange: (value: 'dark' | 'light' | 'system') => void;
   handleDefaultTabChange: (value: 'dashboard' | 'last-session') => void;
+  handleAutoExpandToolsChange: (tools: string[]) => void;
 
   // Notification handlers
   handleNotificationToggle: (key: keyof AppConfig['notifications'], value: boolean) => void;
@@ -84,6 +85,13 @@ export function useSettingsHandlers({
   const handleDefaultTabChange = useCallback(
     (value: 'dashboard' | 'last-session') => {
       void updateConfig('general', { defaultTab: value });
+    },
+    [updateConfig]
+  );
+
+  const handleAutoExpandToolsChange = useCallback(
+    (tools: string[]) => {
+      void updateConfig('general', { autoExpandTools: tools });
     },
     [updateConfig]
   );
@@ -374,6 +382,7 @@ export function useSettingsHandlers({
     handleGeneralToggle,
     handleThemeChange,
     handleDefaultTabChange,
+    handleAutoExpandToolsChange,
     handleNotificationToggle,
     handleSnooze,
     handleClearSnooze,
