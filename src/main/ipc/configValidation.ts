@@ -203,6 +203,7 @@ function validateGeneralSection(data: unknown): ValidationSuccess<'general'> | V
     'theme',
     'defaultTab',
     'claudeRootPath',
+    'autoExpandAIGroups',
     'autoExpandTools',
   ];
 
@@ -267,6 +268,12 @@ function validateGeneralSection(data: unknown): ValidationSuccess<'general'> | V
           }
           result.claudeRootPath = path.resolve(normalized);
         }
+        break;
+      case 'autoExpandAIGroups':
+        if (typeof value !== 'boolean') {
+          return { valid: false, error: 'general.autoExpandAIGroups must be a boolean' };
+        }
+        result.autoExpandAIGroups = value;
         break;
       case 'autoExpandTools':
         if (!Array.isArray(value) || !value.every((v) => typeof v === 'string')) {

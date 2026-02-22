@@ -262,6 +262,8 @@ export interface AppConfig {
     defaultTab: 'dashboard' | 'last-session';
     /** Optional custom Claude root folder (auto-detected when null) */
     claudeRootPath: string | null;
+    /** Auto-expand all AI response groups when opening a transcript */
+    autoExpandAIGroups?: boolean;
     /** Tool names that should be auto-expanded when rendered (e.g. ['Write', 'Edit']) */
     autoExpandTools?: string[];
   };
