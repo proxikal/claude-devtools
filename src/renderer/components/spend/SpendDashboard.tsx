@@ -16,7 +16,7 @@ import { useEffect, useState } from 'react';
 
 import { api } from '@renderer/api';
 import { formatCostUsd } from '@shared/utils/costEstimator';
-import { AlertCircle, Clock, DollarSign, Info, Loader2, TrendingUp, Zap } from 'lucide-react';
+import { AlertCircle, Clock, Info, Loader2, TrendingUp, Zap } from 'lucide-react';
 
 import type { SpendPeriod, SpendSummary } from '@shared/types/spend';
 
@@ -65,14 +65,20 @@ const StatCard = ({ label, period, highlight }: StatCardProps): React.JSX.Elemen
       {label}
     </span>
     <span className="text-2xl font-semibold tabular-nums" style={{ color: 'var(--color-text)' }}>
-      {formatCostUsd(period.costUsd)}
+      {formatTokensK(period.outputTokens)}
     </span>
-    <div className="flex items-center gap-3">
+    <span
+      className="text-[10px] font-medium uppercase tracking-wider"
+      style={{ color: 'var(--color-text-muted)' }}
+    >
+      output tokens
+    </span>
+    <div className="mt-0.5 flex items-center gap-3">
       <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
         {period.sessions} {period.sessions === 1 ? 'session' : 'sessions'}
       </span>
       <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-        {formatTokensK(period.outputTokens)} out
+        ~{formatCostUsd(period.costUsd)} API equiv.
       </span>
     </div>
   </div>
@@ -94,28 +100,31 @@ const BarChart = ({ daily }: BarChartProps): React.JSX.Element => {
     const d = new Date();
     d.setDate(d.getDate() - (13 - i));
     const date = d.toISOString().slice(0, 10);
-    return lookup.get(date) ?? { date, costUsd: 0, sessions: 0 };
+    return lookup.get(date) ?? { date, costUsd: 0, sessions: 0, outputTokens: 0 };
   });
 
-  const maxCost = Math.max(...days.map((d) => d.costUsd), 0.0001);
+  const maxTokens = Math.max(...days.map((d) => d.outputTokens), 1);
 
   return (
     <div className="flex flex-col gap-1">
       <div className="flex h-24 gap-1">
         {days.map((day) => {
-          const heightPct = Math.max((day.costUsd / maxCost) * 100, day.costUsd > 0 ? 4 : 0);
+          const heightPct = Math.max(
+            (day.outputTokens / maxTokens) * 100,
+            day.outputTokens > 0 ? 4 : 0
+          );
           const isToday = day.date === todayStr;
           return (
             <div
               key={day.date}
               className="group relative flex flex-1 flex-col justify-end"
-              title={`${relativeDate(day.date)}: ${formatCostUsd(day.costUsd)} · ${day.sessions} sessions`}
+              title={`${relativeDate(day.date)}: ${formatTokensK(day.outputTokens)} output tokens · ${day.sessions} sessions`}
             >
               <div
                 className="w-full rounded-t-sm transition-opacity group-hover:opacity-70"
                 style={{
                   height: `${heightPct}%`,
-                  minHeight: day.costUsd > 0 ? '3px' : '0',
+                  minHeight: day.outputTokens > 0 ? '3px' : '0',
                   backgroundColor: isToday ? '#6366f1' : 'var(--color-border-emphasis)',
                 }}
               />
@@ -305,7 +314,7 @@ export const SpendDashboard = (): React.JSX.Element => {
               className="text-xs font-semibold uppercase tracking-wider"
               style={{ color: 'var(--color-text-muted)' }}
             >
-              14-Day Activity
+              14-Day Output Tokens
             </span>
             <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
               <span style={{ color: '#6366f1' }}>■</span> today
@@ -333,10 +342,10 @@ export const SpendDashboard = (): React.JSX.Element => {
                         {proj.sessions} sessions
                       </span>
                       <span
-                        className="w-14 text-right text-sm font-semibold tabular-nums"
+                        className="w-16 text-right text-sm font-semibold tabular-nums"
                         style={{ color: 'var(--color-text)' }}
                       >
-                        {formatCostUsd(proj.costUsd)}
+                        {formatTokensK(proj.outputTokens)}
                       </span>
                     </div>
                   </div>
@@ -368,11 +377,8 @@ export const SpendDashboard = (): React.JSX.Element => {
                       <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
                         {m.sessions} sessions
                       </span>
-                      <span
-                        className="w-14 text-right text-sm font-semibold tabular-nums"
-                        style={{ color: 'var(--color-text)' }}
-                      >
-                        {formatCostUsd(m.costUsd)}
+                      <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                        ~{formatCostUsd(m.costUsd)}
                       </span>
                     </div>
                   </div>
@@ -386,7 +392,7 @@ export const SpendDashboard = (): React.JSX.Element => {
         {/* ── Top Sessions ────────────────────────────────────────────────── */}
         {topSessions.length > 0 && (
           <div className="mb-8">
-            <SectionHeader title="Top Sessions" />
+            <SectionHeader title="Heaviest Sessions" />
             <div className="space-y-1">
               {topSessions.map((s) => (
                 <div
@@ -394,10 +400,7 @@ export const SpendDashboard = (): React.JSX.Element => {
                   className="flex items-center gap-3 rounded-lg px-3 py-2.5"
                   style={{ border: '1px solid var(--color-border)' }}
                 >
-                  <DollarSign
-                    className="size-3.5 shrink-0"
-                    style={{ color: 'var(--color-text-muted)' }}
-                  />
+                  <Zap className="size-3.5 shrink-0" style={{ color: 'var(--color-text-muted)' }} />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       <span className="truncate text-sm" style={{ color: 'var(--color-text)' }}>
@@ -421,23 +424,22 @@ export const SpendDashboard = (): React.JSX.Element => {
                       <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
                         {relativeDate(s.date)}
                       </span>
-                      <span
-                        className="text-[10px]"
-                        style={{ color: 'var(--color-border-emphasis)' }}
-                      >
-                        ·
-                      </span>
-                      <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                        {formatTokensK(s.outputTokens)} out
-                      </span>
                     </div>
                   </div>
-                  <span
-                    className="shrink-0 text-sm font-semibold tabular-nums"
-                    style={{ color: 'var(--color-text)' }}
-                  >
-                    {formatCostUsd(s.costUsd)}
-                  </span>
+                  <div className="flex shrink-0 flex-col items-end gap-0.5">
+                    <span
+                      className="text-sm font-semibold tabular-nums"
+                      style={{ color: 'var(--color-text)' }}
+                    >
+                      {formatTokensK(s.outputTokens)}
+                    </span>
+                    <span
+                      className="text-[10px] tabular-nums"
+                      style={{ color: 'var(--color-text-muted)' }}
+                    >
+                      output tokens
+                    </span>
+                  </div>
                 </div>
               ))}
             </div>

@@ -198,9 +198,15 @@ function aggregate(raw: RawSessionCost[]): SpendSummary {
 
     // Daily (last 30 days)
     if (dateStr >= day30AgoStr) {
-      const existing = dayMap.get(dateStr) ?? { date: dateStr, costUsd: 0, sessions: 0 };
+      const existing = dayMap.get(dateStr) ?? {
+        date: dateStr,
+        costUsd: 0,
+        sessions: 0,
+        outputTokens: 0,
+      };
       existing.costUsd += s.costUsd;
       existing.sessions += 1;
+      existing.outputTokens += s.outputTokens;
       dayMap.set(dateStr, existing);
     }
 
@@ -244,8 +250,11 @@ function aggregate(raw: RawSessionCost[]): SpendSummary {
     a.date.localeCompare(b.date)
   );
 
-  // Build project array
-  const maxProjectCost = Math.max(...Array.from(projectMap.values()).map((p) => p.costUsd), 0.001);
+  // Build project array — sorted by output tokens, fraction relative to top project
+  const maxProjectTokens = Math.max(
+    ...Array.from(projectMap.values()).map((p) => p.outputTokens),
+    1
+  );
   const byProject: ProjectSpend[] = Array.from(projectMap.entries())
     .map(([id, p]) => ({
       projectId: id,
@@ -253,24 +262,23 @@ function aggregate(raw: RawSessionCost[]): SpendSummary {
       costUsd: p.costUsd,
       sessions: p.sessions,
       outputTokens: p.outputTokens,
-      fraction: p.costUsd / maxProjectCost,
+      fraction: p.outputTokens / maxProjectTokens,
     }))
-    .sort((a, b) => b.costUsd - a.costUsd);
+    .sort((a, b) => b.outputTokens - a.outputTokens);
 
-  // Build model array
-  const totalCostForFraction = allTime.costUsd || 1;
+  // Build model array — sorted by output tokens, fraction of total output tokens
   const byModel: ModelSpend[] = Array.from(modelMap.entries())
     .map(([model, m]) => ({
       model,
       label: m.label,
       costUsd: m.costUsd,
       sessions: m.sessions,
-      fraction: m.costUsd / totalCostForFraction,
+      fraction: m.costUsd / (allTime.costUsd || 1),
     }))
-    .sort((a, b) => b.costUsd - a.costUsd);
+    .sort((a, b) => b.sessions - a.sessions);
 
-  // Top 10 sessions by cost
-  topSessions.sort((a, b) => b.costUsd - a.costUsd);
+  // Top 10 sessions by output tokens
+  topSessions.sort((a, b) => b.outputTokens - a.outputTokens);
 
   return {
     totals: { today, week, month, allTime },
