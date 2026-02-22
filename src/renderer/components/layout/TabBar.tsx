@@ -39,7 +39,7 @@ export const TabBar = ({ paneId }: TabBarProps): React.JSX.Element => {
     setSelectedTabIds,
     clearTabSelection,
     openDashboard,
-    openSpendDashboard,
+    openUsageDashboard,
     fetchSessionDetail,
     fetchSessions,
     openCommandPalette,
@@ -67,7 +67,7 @@ export const TabBar = ({ paneId }: TabBarProps): React.JSX.Element => {
       setSelectedTabIds: s.setSelectedTabIds,
       clearTabSelection: s.clearTabSelection,
       openDashboard: s.openDashboard,
-      openSpendDashboard: s.openSpendDashboard,
+      openUsageDashboard: s.openUsageDashboard,
       fetchSessionDetail: s.fetchSessionDetail,
       fetchSessions: s.fetchSessions,
       openCommandPalette: s.openCommandPalette,
@@ -419,7 +419,7 @@ export const TabBar = ({ paneId }: TabBarProps): React.JSX.Element => {
 
         {/* Spend dashboard button */}
         <button
-          onClick={openSpendDashboard}
+          onClick={openUsageDashboard}
           onMouseEnter={() => setSpendHover(true)}
           onMouseLeave={() => setSpendHover(false)}
           className="rounded-md p-2 transition-colors"
