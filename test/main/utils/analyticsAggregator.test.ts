@@ -280,6 +280,15 @@ describe('computeInsights', () => {
     expect(result.contextThrashWarning?.detected).toBe(true);
   });
 
+  it('does not flag context thrash below threshold', () => {
+    const sessions = Array.from(
+      { length: 6 },
+      () => makeSession({ outputTokens: 1000, totalTokens: 10000 }) // 10% output ratio — above 5% threshold
+    );
+    const result = computeInsights(sessions, sessions, []);
+    expect(result.contextThrashWarning).toBeNull();
+  });
+
   it('detects short session churn', () => {
     const shortSessions = Array.from(
       { length: 4 },
@@ -290,5 +299,43 @@ describe('computeInsights', () => {
     const result = computeInsights(all, all, []);
     expect(result.shortSessionChurn).not.toBeNull();
     expect(result.shortSessionChurn?.count).toBe(4);
+  });
+
+  it('does not flag short session churn below threshold', () => {
+    // 1 short session out of 10 = 10%, below 20% threshold
+    const shortSessions = [makeSession({ durationMs: 60000, totalTokens: 500 })];
+    const normalSessions = Array.from({ length: 9 }, () => makeSession());
+    const all = [...shortSessions, ...normalSessions];
+    const result = computeInsights(all, all, []);
+    expect(result.shortSessionChurn).toBeNull();
+  });
+
+  it('detects peak hour pattern', () => {
+    // 3 late-hour buckets (hours 0, 1, 2) with distinct peak dates, each carrying high token share
+    const lateNightSessions = Array.from({ length: 3 }, (_, i) =>
+      makeSession({
+        startHour: i, // hours 0, 1, 2
+        date: `2026-02-${String(10 + i).padStart(2, '0')}`,
+        outputTokens: 50000,
+      })
+    );
+    const hourly = [
+      { hour: 0, avgOutputTokens: 50000, peakOutputTokens: 50000, peakDate: '2026-02-10' },
+      { hour: 1, avgOutputTokens: 50000, peakOutputTokens: 50000, peakDate: '2026-02-11' },
+      { hour: 2, avgOutputTokens: 50000, peakOutputTokens: 50000, peakDate: '2026-02-12' },
+    ];
+    const result = computeInsights(lateNightSessions, lateNightSessions, hourly);
+    expect(result.peakHourWarning).not.toBeNull();
+    expect(result.peakHourWarning?.detected).toBe(true);
+    expect(result.peakHourWarning?.hours).toContain(2);
+  });
+
+  it('does not flag peak hours for daytime activity', () => {
+    const sessions = Array.from({ length: 6 }, () => makeSession({ startHour: 10 }));
+    const hourly = [
+      { hour: 10, avgOutputTokens: 1000, peakOutputTokens: 1000, peakDate: '2026-02-10' },
+    ];
+    const result = computeInsights(sessions, sessions, hourly);
+    expect(result.peakHourWarning).toBeNull();
   });
 });
