@@ -224,14 +224,22 @@ export function useAutoScrollBottom(
   }, [disabled]);
 
   // Reset isAtBottom state when resetKey changes (e.g., tab/session switch)
-  // This ensures new content will auto-scroll to bottom
+  // Also immediately scroll to bottom so the new session/tab starts at the end.
   useEffect(() => {
     if (resetKey !== prevResetKeyRef.current) {
       isAtBottomRef.current = true;
       wasAtBottomBeforeUpdateRef.current = true;
       prevResetKeyRef.current = resetKey;
+      // Scroll to bottom immediately on tab/session switch (double-RAF so DOM settles)
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (!disabledRef.current) {
+            scrollToBottom('auto');
+          }
+        });
+      });
     }
-  }, [resetKey]);
+  }, [resetKey, scrollToBottom]);
 
   /**
    * After content updates (dependencies change), scroll to bottom if we were at bottom.
