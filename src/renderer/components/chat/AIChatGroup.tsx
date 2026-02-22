@@ -141,6 +141,12 @@ const AIChatGroupInner = ({
     const td = tabId ? s.tabSessionData[tabId] : null;
     return (td?.sessionDetail ?? s.sessionDetail)?.session?.projectPath;
   });
+
+  // Config-driven tool auto-expand set
+  const autoExpandToolSet = useStore((s) => {
+    const tools = s.appConfig?.general?.autoExpandTools;
+    return tools && tools.length > 0 ? new Set(tools) : null;
+  });
   const isSessionOngoing = useStore((s) => {
     const id = s.selectedSessionId;
     if (!id) return false;
@@ -378,6 +384,19 @@ const AIChatGroupInner = ({
     aiGroup.id,
     expandDisplayItem,
   ]);
+
+  // Effect: auto-expand tool items whose name is in autoExpandToolSet.
+  // Runs when display items change (new group load or live refresh adds tools).
+  // Follows the same guard pattern as the highlight and search effects above.
+  useEffect(() => {
+    if (!autoExpandToolSet) return;
+    for (let i = 0; i < enhanced.displayItems.length; i++) {
+      const item = enhanced.displayItems[i];
+      if (item.type === 'tool' && autoExpandToolSet.has(item.tool.name)) {
+        expandDisplayItem(aiGroup.id, `tool-${item.tool.id}-${i}`);
+      }
+    }
+  }, [enhanced.displayItems, autoExpandToolSet, aiGroup.id, expandDisplayItem]);
 
   // Determine if there's content to toggle
   const hasToggleContent = enhanced.displayItems.length > 0;

@@ -95,6 +95,38 @@ describe('configValidation', () => {
     }
   });
 
+  it('accepts general.autoExpandTools as an array of strings', () => {
+    const result = validateConfigUpdatePayload('general', {
+      autoExpandTools: ['Write', 'Edit', 'Bash'],
+    });
+
+    expect(result.valid).toBe(true);
+    if (result.valid) {
+      expect(result.data).toEqual({ autoExpandTools: ['Write', 'Edit', 'Bash'] });
+    }
+  });
+
+  it('accepts general.autoExpandTools as an empty array', () => {
+    const result = validateConfigUpdatePayload('general', { autoExpandTools: [] });
+    expect(result.valid).toBe(true);
+  });
+
+  it('rejects general.autoExpandTools when not an array', () => {
+    const result = validateConfigUpdatePayload('general', { autoExpandTools: 'Write' });
+    expect(result.valid).toBe(false);
+    if (!result.valid) {
+      expect(result.error).toContain('autoExpandTools');
+    }
+  });
+
+  it('rejects general.autoExpandTools when array contains non-strings', () => {
+    const result = validateConfigUpdatePayload('general', { autoExpandTools: ['Write', 42] });
+    expect(result.valid).toBe(false);
+    if (!result.valid) {
+      expect(result.error).toContain('autoExpandTools');
+    }
+  });
+
   it('accepts valid display updates', () => {
     const result = validateConfigUpdatePayload('display', {
       compactMode: true,

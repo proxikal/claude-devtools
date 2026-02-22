@@ -203,6 +203,7 @@ function validateGeneralSection(data: unknown): ValidationSuccess<'general'> | V
     'theme',
     'defaultTab',
     'claudeRootPath',
+    'autoExpandTools',
   ];
 
   const result: Partial<GeneralConfig> = {};
@@ -266,6 +267,12 @@ function validateGeneralSection(data: unknown): ValidationSuccess<'general'> | V
           }
           result.claudeRootPath = path.resolve(normalized);
         }
+        break;
+      case 'autoExpandTools':
+        if (!Array.isArray(value) || !value.every((v) => typeof v === 'string')) {
+          return { valid: false, error: 'general.autoExpandTools must be an array of strings' };
+        }
+        result.autoExpandTools = value;
         break;
       default:
         return { valid: false, error: `Unsupported general key: ${key}` };

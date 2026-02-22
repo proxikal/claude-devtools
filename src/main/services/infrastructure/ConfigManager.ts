@@ -181,6 +181,8 @@ export interface GeneralConfig {
   theme: 'dark' | 'light' | 'system';
   defaultTab: 'dashboard' | 'last-session';
   claudeRootPath: string | null;
+  /** Tool names that should be auto-expanded when rendered */
+  autoExpandTools?: string[];
 }
 
 export interface DisplayConfig {
