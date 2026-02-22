@@ -103,16 +103,14 @@ const BarChart = ({ daily }: BarChartProps): React.JSX.Element => {
     return lookup.get(date) ?? { date, costUsd: 0, sessions: 0, outputTokens: 0 };
   });
 
-  const maxTokens = Math.max(...days.map((d) => d.outputTokens), 1);
+  const maxTokens = Math.max(...days.map((d) => d.outputTokens ?? 0), 1);
 
   return (
     <div className="flex flex-col gap-1">
       <div className="flex h-24 gap-1">
         {days.map((day) => {
-          const heightPct = Math.max(
-            (day.outputTokens / maxTokens) * 100,
-            day.outputTokens > 0 ? 4 : 0
-          );
+          const tokens = day.outputTokens ?? 0;
+          const heightPct = Math.max((tokens / maxTokens) * 100, tokens > 0 ? 4 : 0);
           const isToday = day.date === todayStr;
           return (
             <div
@@ -124,7 +122,7 @@ const BarChart = ({ daily }: BarChartProps): React.JSX.Element => {
                 className="w-full rounded-t-sm transition-opacity group-hover:opacity-70"
                 style={{
                   height: `${heightPct}%`,
-                  minHeight: day.outputTokens > 0 ? '3px' : '0',
+                  minHeight: tokens > 0 ? '3px' : '0',
                   backgroundColor: isToday ? '#6366f1' : 'var(--color-border-emphasis)',
                 }}
               />
