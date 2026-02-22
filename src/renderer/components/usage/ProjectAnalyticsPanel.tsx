@@ -6,8 +6,8 @@
  * sections. Back button returns to the usage overview.
  *
  * Phases:
- *   Phase 2 — shell, back button, loading/error state  ← current
- *   Phase 3 — summary header + activity chart
+ *   Phase 2 — shell, back button, loading/error state  ✓
+ *   Phase 3 — summary header + activity chart           ← current
  *   Phase 4 — model breakdown + value section
  *   Phase 5 — sessions list
  *   Phase 6 — polish
@@ -17,9 +17,39 @@
 import { useEffect, useState } from 'react';
 
 import { api } from '@renderer/api';
+import { formatCostUsd } from '@shared/utils/usageEstimator';
 import { AlertCircle, ArrowLeft, Loader2 } from 'lucide-react';
 
-import type { ProjectAnalyticsSummary } from '@shared/types/projectAnalytics';
+import type { DailyBucket, ProjectAnalyticsSummary } from '@shared/types/projectAnalytics';
+
+// =============================================================================
+// Helpers
+// =============================================================================
+
+function formatTokensLarge(n: number): string {
+  if (!n || !isFinite(n)) return '0';
+  if (n < 1000) return String(Math.round(n));
+  if (n < 1_000_000) return `${(n / 1000).toFixed(1)}k`;
+  if (n < 1_000_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
+  return `${(n / 1_000_000_000).toFixed(2)}B`;
+}
+
+function formatDateShort(iso: string): string {
+  const d = new Date(iso + 'T00:00:00');
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+function formatDateFull(iso: string): string {
+  const d = new Date(iso + 'T00:00:00');
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function formatHour(hour: number): string {
+  if (hour === 0) return '12am';
+  if (hour < 12) return `${hour}am`;
+  if (hour === 12) return '12pm';
+  return `${hour - 12}pm`;
+}
 
 // =============================================================================
 // Props
@@ -33,7 +63,561 @@ interface ProjectAnalyticsPanelProps {
 }
 
 // =============================================================================
-// Component
+// Summary Header
+// =============================================================================
+
+interface SummaryHeaderProps {
+  summary: ProjectAnalyticsSummary;
+}
+
+const SummaryHeader = ({ summary }: SummaryHeaderProps): React.JSX.Element => {
+  const { totals, dateRange, daysActive } = summary;
+  const hasRange = dateRange.first !== dateRange.last;
+
+  return (
+    <div className="mb-8">
+      {/* Top stat row */}
+      <div className="mb-4 grid grid-cols-3 gap-3">
+        <div
+          className="flex flex-col gap-1 rounded-xl p-4"
+          style={{
+            border: '1px solid var(--color-border-emphasis)',
+            backgroundColor: 'var(--color-surface-raised)',
+          }}
+        >
+          <span
+            className="text-xs font-medium uppercase tracking-wider"
+            style={{ color: 'var(--color-text-muted)' }}
+          >
+            Output Tokens
+          </span>
+          <span
+            className="text-2xl font-semibold tabular-nums"
+            style={{ color: 'var(--color-text)' }}
+          >
+            {formatTokensLarge(totals.outputTokens)}
+          </span>
+          <span
+            className="text-[10px] font-medium uppercase tracking-wider"
+            style={{ color: 'var(--color-text-muted)' }}
+          >
+            all time
+          </span>
+        </div>
+
+        <div
+          className="flex flex-col gap-1 rounded-xl p-4"
+          style={{ border: '1px solid var(--color-border)' }}
+        >
+          <span
+            className="text-xs font-medium uppercase tracking-wider"
+            style={{ color: 'var(--color-text-muted)' }}
+          >
+            Total Context
+          </span>
+          <span
+            className="text-2xl font-semibold tabular-nums"
+            style={{ color: 'var(--color-text)' }}
+          >
+            {formatTokensLarge(totals.totalTokens)}
+          </span>
+          <span
+            className="text-[10px] font-medium uppercase tracking-wider"
+            style={{ color: 'var(--color-text-muted)' }}
+          >
+            tokens processed
+          </span>
+        </div>
+
+        <div
+          className="flex flex-col gap-1 rounded-xl p-4"
+          style={{ border: '1px solid var(--color-border)' }}
+        >
+          <span
+            className="text-xs font-medium uppercase tracking-wider"
+            style={{ color: 'var(--color-text-muted)' }}
+          >
+            Sessions
+          </span>
+          <span
+            className="text-2xl font-semibold tabular-nums"
+            style={{ color: 'var(--color-text)' }}
+          >
+            {totals.sessions.toLocaleString('en-US')}
+          </span>
+          <span
+            className="text-[10px] font-medium uppercase tracking-wider"
+            style={{ color: 'var(--color-text-muted)' }}
+          >
+            {daysActive} {daysActive === 1 ? 'day' : 'days'} active
+          </span>
+        </div>
+      </div>
+
+      {/* Date range */}
+      {hasRange && (
+        <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+          {formatDateFull(dateRange.first)} → {formatDateFull(dateRange.last)}
+        </p>
+      )}
+    </div>
+  );
+};
+
+// =============================================================================
+// Activity Bar Chart
+// =============================================================================
+
+type ChartRange = '30' | '90' | 'all';
+
+interface ActivityChartProps {
+  daily: DailyBucket[];
+  peakDate: string | null;
+}
+
+const ActivityChart = ({ daily, peakDate }: ActivityChartProps): React.JSX.Element => {
+  const [range, setRange] = useState<ChartRange>('30');
+
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const lookup = new Map(daily.map((d) => [d.date, d]));
+
+  // Build the dense day window based on selected range
+  const days = ((): DailyBucket[] => {
+    if (range === 'all') {
+      // Span from first activity day to today
+      if (daily.length === 0) return [];
+      const firstDate = new Date(daily[0].date + 'T00:00:00');
+      const today = new Date(todayStr + 'T00:00:00');
+      const totalDays = Math.round((today.getTime() - firstDate.getTime()) / 86_400_000) + 1;
+      return Array.from({ length: totalDays }, (_, i) => {
+        const d = new Date(firstDate);
+        d.setDate(d.getDate() + i);
+        const date = d.toISOString().slice(0, 10);
+        return (
+          lookup.get(date) ?? { date, outputTokens: 0, totalTokens: 0, sessions: 0, models: [] }
+        );
+      });
+    }
+
+    const count = range === '30' ? 30 : 90;
+    return Array.from({ length: count }, (_, i) => {
+      const d = new Date();
+      d.setDate(d.getDate() - (count - 1 - i));
+      const date = d.toISOString().slice(0, 10);
+      return lookup.get(date) ?? { date, outputTokens: 0, totalTokens: 0, sessions: 0, models: [] };
+    });
+  })();
+
+  const maxTokens = Math.max(...days.map((d) => d.outputTokens ?? 0), 1);
+
+  // X-axis labels: first, middle, last
+  const labelDays =
+    days.length > 1
+      ? [days[0], days[Math.floor((days.length - 1) / 2)], days[days.length - 1]]
+      : days.length === 1
+        ? [days[0]]
+        : [];
+
+  const PEAK_COLOR = '#f59e0b'; // amber for peak
+  const TODAY_COLOR = '#6366f1'; // indigo for today
+  const DEFAULT_COLOR = 'var(--color-border-emphasis)';
+
+  return (
+    <div className="mb-8 rounded-xl p-4" style={{ border: '1px solid var(--color-border)' }}>
+      {/* Header row */}
+      <div className="mb-3 flex items-center justify-between">
+        <span
+          className="text-xs font-semibold uppercase tracking-wider"
+          style={{ color: 'var(--color-text-muted)' }}
+        >
+          Activity
+        </span>
+        <div className="flex items-center gap-3">
+          {/* Legend */}
+          <div
+            className="flex items-center gap-3 text-[10px]"
+            style={{ color: 'var(--color-text-muted)' }}
+          >
+            {peakDate && (
+              <span>
+                <span style={{ color: PEAK_COLOR }}>■</span> peak day
+              </span>
+            )}
+            <span>
+              <span style={{ color: TODAY_COLOR }}>■</span> today
+            </span>
+          </div>
+          {/* Range toggle */}
+          <div
+            className="flex overflow-hidden rounded-md"
+            style={{ border: '1px solid var(--color-border)' }}
+          >
+            {(['30', '90', 'all'] as ChartRange[]).map((r) => (
+              <button
+                key={r}
+                onClick={() => setRange(r)}
+                className="px-2.5 py-0.5 text-[10px] font-medium transition-colors"
+                style={{
+                  color: range === r ? 'var(--color-text)' : 'var(--color-text-muted)',
+                  backgroundColor: range === r ? 'var(--color-surface-raised)' : 'transparent',
+                }}
+              >
+                {r === 'all' ? 'All' : `${r}d`}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Bars */}
+      {days.length === 0 ? (
+        <div
+          className="flex h-24 items-center justify-center text-xs"
+          style={{ color: 'var(--color-text-muted)' }}
+        >
+          No data
+        </div>
+      ) : (
+        <div className="flex flex-col gap-1">
+          <div className="flex h-24 gap-px">
+            {days.map((day) => {
+              const tokens = day.outputTokens ?? 0;
+              const heightPct = Math.max((tokens / maxTokens) * 100, tokens > 0 ? 4 : 0);
+              const isToday = day.date === todayStr;
+              const isPeak = peakDate !== null && day.date === peakDate;
+              const color = isPeak ? PEAK_COLOR : isToday ? TODAY_COLOR : DEFAULT_COLOR;
+              return (
+                <div
+                  key={day.date}
+                  className="group relative flex flex-1 flex-col justify-end"
+                  title={`${formatDateShort(day.date)}: ${formatTokensLarge(tokens)} output tokens · ${day.sessions} ${day.sessions === 1 ? 'session' : 'sessions'}`}
+                >
+                  <div
+                    className="w-full rounded-t-sm transition-opacity group-hover:opacity-70"
+                    style={{
+                      height: `${heightPct}%`,
+                      minHeight: tokens > 0 ? '3px' : '0',
+                      backgroundColor: color,
+                    }}
+                  />
+                </div>
+              );
+            })}
+          </div>
+          {/* X-axis */}
+          {labelDays.length > 0 && (
+            <div className="flex justify-between px-0">
+              {labelDays.map((day, i) => (
+                <span key={i} className="text-[10px]" style={{ color: 'var(--color-text-muted)' }}>
+                  {formatDateShort(day.date)}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// =============================================================================
+// Peak Moments
+// =============================================================================
+
+interface PeakMomentsProps {
+  summary: ProjectAnalyticsSummary;
+}
+
+const PeakMoments = ({ summary }: PeakMomentsProps): React.JSX.Element | null => {
+  const { peakDay, peakHour, longestStreak } = summary;
+  if (!peakDay && !peakHour && !longestStreak) return null;
+
+  return (
+    <div className="mb-8">
+      {/* Section header */}
+      <div className="mb-3 pb-2" style={{ borderBottom: '1px solid var(--color-border)' }}>
+        <span
+          className="text-xs font-semibold uppercase tracking-wider"
+          style={{ color: 'var(--color-text-muted)' }}
+        >
+          Peak Moments
+        </span>
+      </div>
+
+      <div className="space-y-2">
+        {peakDay && (
+          <div
+            className="flex items-center justify-between rounded-lg px-4 py-3"
+            style={{ border: '1px solid var(--color-border)' }}
+          >
+            <div>
+              <span className="text-xs font-medium" style={{ color: 'var(--color-text-muted)' }}>
+                Busiest day
+              </span>
+              <p className="mt-0.5 text-sm" style={{ color: 'var(--color-text)' }}>
+                {formatDateFull(peakDay.date)}
+              </p>
+              <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                {peakDay.sessions} {peakDay.sessions === 1 ? 'session' : 'sessions'}
+              </p>
+            </div>
+            <div className="text-right">
+              <span className="text-lg font-semibold tabular-nums" style={{ color: '#f59e0b' }}>
+                {formatTokensLarge(peakDay.outputTokens)}
+              </span>
+              <p
+                className="text-[10px] font-medium uppercase"
+                style={{ color: 'var(--color-text-muted)' }}
+              >
+                output tokens
+              </p>
+            </div>
+          </div>
+        )}
+
+        {peakHour && (
+          <div
+            className="flex items-center justify-between rounded-lg px-4 py-3"
+            style={{ border: '1px solid var(--color-border)' }}
+          >
+            <div>
+              <span className="text-xs font-medium" style={{ color: 'var(--color-text-muted)' }}>
+                Busiest hour
+              </span>
+              <p className="mt-0.5 text-sm" style={{ color: 'var(--color-text)' }}>
+                {formatHour(peakHour.hour)} on {formatDateFull(peakHour.date)}
+              </p>
+            </div>
+            <div className="text-right">
+              <span
+                className="text-lg font-semibold tabular-nums"
+                style={{ color: 'var(--color-text)' }}
+              >
+                {formatTokensLarge(peakHour.outputTokens)}
+              </span>
+              <p
+                className="text-[10px] font-medium uppercase"
+                style={{ color: 'var(--color-text-muted)' }}
+              >
+                output tokens
+              </p>
+            </div>
+          </div>
+        )}
+
+        {longestStreak && longestStreak.days > 1 && (
+          <div
+            className="flex items-center justify-between rounded-lg px-4 py-3"
+            style={{ border: '1px solid var(--color-border)' }}
+          >
+            <div>
+              <span className="text-xs font-medium" style={{ color: 'var(--color-text-muted)' }}>
+                Longest streak
+              </span>
+              <p className="mt-0.5 text-sm" style={{ color: 'var(--color-text)' }}>
+                {formatDateShort(longestStreak.startDate)} →{' '}
+                {formatDateShort(longestStreak.endDate)}
+              </p>
+              <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                {formatTokensLarge(longestStreak.totalTokens)} total tokens
+              </p>
+            </div>
+            <div className="text-right">
+              <span
+                className="text-lg font-semibold tabular-nums"
+                style={{ color: 'var(--color-text)' }}
+              >
+                {longestStreak.days}
+              </span>
+              <p
+                className="text-[10px] font-medium uppercase"
+                style={{ color: 'var(--color-text-muted)' }}
+              >
+                {longestStreak.days === 1 ? 'day' : 'days'}
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// =============================================================================
+// By Model
+// =============================================================================
+
+interface ByModelProps {
+  byModel: ProjectAnalyticsSummary['byModel'];
+}
+
+const ByModel = ({ byModel }: ByModelProps): React.JSX.Element | null => {
+  if (byModel.length === 0) return null;
+
+  const maxOutput = Math.max(...byModel.map((m) => m.outputTokens ?? 0), 1);
+
+  return (
+    <div className="mb-8">
+      <div className="mb-3 pb-2" style={{ borderBottom: '1px solid var(--color-border)' }}>
+        <span
+          className="text-xs font-semibold uppercase tracking-wider"
+          style={{ color: 'var(--color-text-muted)' }}
+        >
+          By Model
+        </span>
+      </div>
+      <div className="space-y-3">
+        {byModel.map((m) => {
+          const fraction = (m.outputTokens ?? 0) / maxOutput;
+          return (
+            <div key={m.model} className="flex flex-col gap-1">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>
+                  {m.label}
+                </span>
+                <div className="ml-4 flex shrink-0 items-center gap-3">
+                  <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                    {m.sessions.toLocaleString('en-US')} {m.sessions === 1 ? 'session' : 'sessions'}
+                  </span>
+                  <span
+                    className="w-16 text-right text-sm font-semibold tabular-nums"
+                    style={{ color: 'var(--color-text)' }}
+                  >
+                    {formatTokensLarge(m.outputTokens ?? 0)}
+                  </span>
+                </div>
+              </div>
+              {/* Fraction bar */}
+              <div
+                className="h-1 w-full overflow-hidden rounded-full"
+                style={{ backgroundColor: 'var(--color-border)' }}
+              >
+                <div
+                  className="h-full rounded-full"
+                  style={{
+                    width: `${Math.max(fraction * 100, fraction > 0 ? 2 : 0)}%`,
+                    backgroundColor: '#10b981',
+                  }}
+                />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+// =============================================================================
+// Value Section
+// =============================================================================
+
+interface ValueSectionProps {
+  valueRatio: ProjectAnalyticsSummary['valueRatio'];
+}
+
+const ValueSection = ({ valueRatio }: ValueSectionProps): React.JSX.Element | null => {
+  const { apiEquivalentUsd, thisMonthUsd, ratio } = valueRatio;
+  if (!apiEquivalentUsd) return null;
+
+  const showRatio = ratio !== null && ratio >= 1;
+
+  return (
+    <div className="mb-8">
+      <div className="mb-3 pb-2" style={{ borderBottom: '1px solid var(--color-border)' }}>
+        <span
+          className="text-xs font-semibold uppercase tracking-wider"
+          style={{ color: 'var(--color-text-muted)' }}
+        >
+          API Equivalent Value
+        </span>
+      </div>
+
+      {/* Ratio headline — the "holy shit" moment */}
+      {showRatio && (
+        <div
+          className="mb-4 rounded-xl p-5 text-center"
+          style={{
+            background:
+              'linear-gradient(135deg, rgba(99,102,241,0.12) 0%, rgba(16,185,129,0.08) 100%)',
+            border: '1px solid rgba(99,102,241,0.3)',
+          }}
+        >
+          <p
+            className="mb-1 text-xs font-medium uppercase tracking-wider"
+            style={{ color: 'rgba(165,180,252,0.8)' }}
+          >
+            If on Claude Max (~$200/mo)
+          </p>
+          <p className="text-5xl font-bold tabular-nums" style={{ color: '#a5b4fc' }}>
+            {ratio.toLocaleString('en-US')}×
+          </p>
+          <p className="mt-1 text-sm" style={{ color: 'var(--color-text-muted)' }}>
+            return on subscription for this project
+          </p>
+        </div>
+      )}
+
+      {/* All-time + this month breakdown */}
+      <div className="grid grid-cols-2 gap-3">
+        <div
+          className="flex flex-col gap-1 rounded-xl p-4"
+          style={{ border: '1px solid var(--color-border)' }}
+        >
+          <span
+            className="text-xs font-medium uppercase tracking-wider"
+            style={{ color: 'var(--color-text-muted)' }}
+          >
+            All Time
+          </span>
+          <span
+            className="text-2xl font-semibold tabular-nums"
+            style={{ color: 'var(--color-text)' }}
+          >
+            {formatCostUsd(apiEquivalentUsd)}
+          </span>
+          <span
+            className="text-[10px] font-medium uppercase"
+            style={{ color: 'var(--color-text-muted)' }}
+          >
+            API equivalent
+          </span>
+        </div>
+        <div
+          className="flex flex-col gap-1 rounded-xl p-4"
+          style={{ border: '1px solid var(--color-border)' }}
+        >
+          <span
+            className="text-xs font-medium uppercase tracking-wider"
+            style={{ color: 'var(--color-text-muted)' }}
+          >
+            This Month
+          </span>
+          <span
+            className="text-2xl font-semibold tabular-nums"
+            style={{ color: 'var(--color-text)' }}
+          >
+            {formatCostUsd(thisMonthUsd)}
+          </span>
+          <span
+            className="text-[10px] font-medium uppercase"
+            style={{ color: 'var(--color-text-muted)' }}
+          >
+            API equivalent
+          </span>
+        </div>
+      </div>
+
+      <p className="mt-3 text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
+        Calculated at public Anthropic API pricing. If you use the API directly, these are your
+        actual costs.
+      </p>
+    </div>
+  );
+};
+
+// =============================================================================
+// Main Component
 // =============================================================================
 
 export const ProjectAnalyticsPanel = ({
@@ -132,20 +716,15 @@ export const ProjectAnalyticsPanel = ({
           </div>
         )}
 
-        {/* ── Content — phases 3–7 will fill this in ───────────────────────── */}
+        {/* ── Content ───────────────────────────────────────────────────────── */}
         {!loading && summary && (
-          <div className="space-y-8">
-            {/* Placeholder until Phase 3 */}
-            <div
-              className="rounded-xl p-6 text-center text-sm"
-              style={{
-                border: '1px solid var(--color-border)',
-                color: 'var(--color-text-muted)',
-              }}
-            >
-              {summary.totals.sessions} sessions ·{' '}
-              {summary.totals.outputTokens.toLocaleString('en-US')} output tokens
-            </div>
+          <div>
+            <SummaryHeader summary={summary} />
+            <ActivityChart daily={summary.daily} peakDate={summary.peakDay?.date ?? null} />
+            <PeakMoments summary={summary} />
+            <ByModel byModel={summary.byModel} />
+            <ValueSection valueRatio={summary.valueRatio} />
+            {/* Phase 5: sessions list */}
           </div>
         )}
       </div>
