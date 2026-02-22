@@ -375,8 +375,11 @@ export const SpendDashboard = (): React.JSX.Element => {
                       <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
                         {m.sessions} sessions
                       </span>
-                      <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                        ~{formatCostUsd(m.costUsd)}
+                      <span
+                        className="w-16 text-right text-sm font-semibold tabular-nums"
+                        style={{ color: 'var(--color-text)' }}
+                      >
+                        {formatTokensK(m.outputTokens ?? 0)}
                       </span>
                     </div>
                   </div>

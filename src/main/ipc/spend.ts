@@ -169,7 +169,10 @@ function aggregate(raw: RawSessionCost[]): SpendSummary {
     string,
     { name: string; costUsd: number; sessions: number; outputTokens: number }
   >();
-  const modelMap = new Map<string, { label: string; costUsd: number; sessions: number }>();
+  const modelMap = new Map<
+    string,
+    { label: string; costUsd: number; sessions: number; outputTokens: number }
+  >();
   const topSessions: SessionSpend[] = [];
 
   for (const s of raw) {
@@ -229,9 +232,11 @@ function aggregate(raw: RawSessionCost[]): SpendSummary {
       label: getModelLabel(s.model),
       costUsd: 0,
       sessions: 0,
+      outputTokens: 0,
     };
     mdl.costUsd += s.costUsd;
     mdl.sessions += 1;
+    mdl.outputTokens += s.outputTokens;
     modelMap.set(modelKey, mdl);
 
     // Top sessions
@@ -268,15 +273,17 @@ function aggregate(raw: RawSessionCost[]): SpendSummary {
     .sort((a, b) => b.outputTokens - a.outputTokens);
 
   // Build model array — sorted by output tokens, fraction of total output tokens
+  const maxModelTokens = Math.max(...Array.from(modelMap.values()).map((m) => m.outputTokens), 1);
   const byModel: ModelSpend[] = Array.from(modelMap.entries())
     .map(([model, m]) => ({
       model,
       label: m.label,
       costUsd: m.costUsd,
       sessions: m.sessions,
-      fraction: m.costUsd / (allTime.costUsd || 1),
+      outputTokens: m.outputTokens,
+      fraction: m.outputTokens / maxModelTokens,
     }))
-    .sort((a, b) => b.sessions - a.sessions);
+    .sort((a, b) => b.outputTokens - a.outputTokens);
 
   // Top 10 sessions by output tokens
   topSessions.sort((a, b) => b.outputTokens - a.outputTokens);
