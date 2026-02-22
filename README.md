@@ -362,7 +362,7 @@ These were submitted as PRs and accepted into `matt1398/claude-devtools`:
 
 These live on `main` (local) and `feat/project-analytics` in this fork. Not yet submitted upstream — either needs more polish or is waiting for the right moment.
 
-#### Usage Dashboard (`feat/spend-dashboard` → merged into local `main`)
+#### Usage Dashboard (merged into local `main`)
 
 A new **Usage** tab showing token output across all your Claude Code projects:
 
