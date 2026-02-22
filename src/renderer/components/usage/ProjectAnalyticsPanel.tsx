@@ -617,6 +617,181 @@ const ValueSection = ({ valueRatio }: ValueSectionProps): React.JSX.Element | nu
 };
 
 // =============================================================================
+// Sessions List
+// =============================================================================
+
+type SortKey = 'totalTokens' | 'date' | 'outputTokens';
+
+interface SessionsListProps {
+  sessions: ProjectAnalyticsSummary['sessions'];
+}
+
+function formatSessionTime(iso: string): string {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return d.toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  });
+}
+
+function stripMarkdown(text: string): string {
+  return text
+    .replace(/```[\s\S]*?```/g, '')
+    .replace(/`[^`]+`/g, '')
+    .replace(/[*_~>#[\]!|]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+const SESSION_DEFAULT_LIMIT = 10;
+
+const SessionsList = ({ sessions }: SessionsListProps): React.JSX.Element | null => {
+  if (sessions.length === 0) return null;
+
+  const [sort, setSort] = useState<SortKey>('totalTokens');
+  const [showAll, setShowAll] = useState(false);
+
+  const sorted = [...sessions].sort((a, b) => {
+    if (sort === 'date') return new Date(b.startTime).getTime() - new Date(a.startTime).getTime();
+    if (sort === 'outputTokens') return b.outputTokens - a.outputTokens;
+    return b.totalTokens - a.totalTokens;
+  });
+
+  const visible = showAll ? sorted : sorted.slice(0, SESSION_DEFAULT_LIMIT);
+
+  const sortLabel = (key: SortKey, label: string) => (
+    <button
+      onClick={() => setSort(key)}
+      className="px-2 py-0.5 text-[10px] font-medium transition-colors"
+      style={{
+        color: sort === key ? 'var(--color-text)' : 'var(--color-text-muted)',
+        backgroundColor: sort === key ? 'var(--color-surface-raised)' : 'transparent',
+      }}
+    >
+      {label}
+    </button>
+  );
+
+  return (
+    <div className="mb-8">
+      {/* Header */}
+      <div
+        className="mb-3 flex items-center justify-between pb-2"
+        style={{ borderBottom: '1px solid var(--color-border)' }}
+      >
+        <span
+          className="text-xs font-semibold uppercase tracking-wider"
+          style={{ color: 'var(--color-text-muted)' }}
+        >
+          Sessions ({sessions.length.toLocaleString('en-US')})
+        </span>
+        <div
+          className="flex overflow-hidden rounded-md"
+          style={{ border: '1px solid var(--color-border)' }}
+        >
+          {sortLabel('totalTokens', 'Total')}
+          {sortLabel('outputTokens', 'Output')}
+          {sortLabel('date', 'Date')}
+        </div>
+      </div>
+
+      {/* Rows */}
+      <div className="space-y-1">
+        {visible.map((s, i) => {
+          const preview = s.firstMessage ? stripMarkdown(s.firstMessage).slice(0, 120) || '—' : '—';
+          const truncated = s.firstMessage && stripMarkdown(s.firstMessage).length > 120;
+          return (
+            <div
+              key={s.sessionId || `${s.startTime}-${i}`}
+              className="flex flex-col gap-0.5 rounded-lg px-3 py-2.5"
+              style={{ border: '1px solid var(--color-border)' }}
+            >
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex min-w-0 items-center gap-2">
+                  <span
+                    className="shrink-0 text-xs tabular-nums"
+                    style={{ color: 'var(--color-text-muted)' }}
+                  >
+                    {formatSessionTime(s.startTime)}
+                  </span>
+                  {s.isSubagent && (
+                    <span
+                      className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium"
+                      style={{
+                        backgroundColor: 'rgba(99,102,241,0.12)',
+                        color: '#a5b4fc',
+                        border: '1px solid rgba(99,102,241,0.25)',
+                      }}
+                    >
+                      subagent
+                    </span>
+                  )}
+                  {s.model && (
+                    <span
+                      className="shrink-0 truncate rounded px-1.5 py-0.5 text-[10px]"
+                      style={{
+                        backgroundColor: 'var(--color-surface-raised)',
+                        color: 'var(--color-text-muted)',
+                        border: '1px solid var(--color-border)',
+                        maxWidth: '160px',
+                      }}
+                    >
+                      {s.model.replace(/^claude-/, '').replace(/-\d{8}$/, '')}
+                    </span>
+                  )}
+                </div>
+                <div className="flex shrink-0 items-center gap-3">
+                  <div className="flex flex-col items-end">
+                    <span
+                      className="text-sm font-semibold tabular-nums"
+                      style={{ color: 'var(--color-text)' }}
+                    >
+                      {formatTokensLarge(s.outputTokens)}
+                    </span>
+                    <span
+                      className="text-[10px] tabular-nums"
+                      style={{ color: 'var(--color-text-muted)' }}
+                    >
+                      {formatTokensLarge(s.totalTokens)} total
+                    </span>
+                  </div>
+                </div>
+              </div>
+              {preview !== '—' && (
+                <p
+                  className="truncate text-xs"
+                  style={{ color: 'var(--color-text-muted)' }}
+                  title={truncated ? s.firstMessage : undefined}
+                >
+                  {preview}
+                  {truncated ? '…' : ''}
+                </p>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Show more / less */}
+      {sessions.length > SESSION_DEFAULT_LIMIT && (
+        <button
+          className="mt-3 text-xs transition-opacity hover:opacity-70"
+          style={{ color: 'var(--color-text-muted)' }}
+          onClick={() => setShowAll((v) => !v)}
+        >
+          {showAll ? 'Show less' : `Show all ${sessions.length.toLocaleString('en-US')} sessions →`}
+        </button>
+      )}
+    </div>
+  );
+};
+
+// =============================================================================
 // Main Component
 // =============================================================================
 
@@ -724,7 +899,7 @@ export const ProjectAnalyticsPanel = ({
             <PeakMoments summary={summary} />
             <ByModel byModel={summary.byModel} />
             <ValueSection valueRatio={summary.valueRatio} />
-            {/* Phase 5: sessions list */}
+            <SessionsList sessions={summary.sessions} />
           </div>
         )}
       </div>
