@@ -147,6 +147,7 @@ export const AddTriggerForm = ({
           <GeneralInfoSection
             name={name}
             toolName={toolName}
+            mode={mode}
             saving={saving}
             onNameChange={setName}
             onToolNameChange={handlers.handleToolNameChange}

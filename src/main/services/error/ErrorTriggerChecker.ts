@@ -9,6 +9,7 @@
  */
 
 import { type ParsedMessage } from '@main/types';
+import { isParsedCompactMessage } from '@main/types/messages';
 import { extractProjectName } from '@main/utils/pathDecoder';
 
 import {
@@ -458,4 +459,50 @@ export function checkTokenThresholdTrigger(
   }
 
   return errors;
+}
+
+// =============================================================================
+// Compact Trigger Checker
+// =============================================================================
+
+/**
+ * Checks if a message is a compaction event and matches a compact trigger.
+ *
+ * @param message - The parsed message to check
+ * @param trigger - The trigger configuration (mode: 'compact')
+ * @param sessionId - Session ID
+ * @param projectId - Project ID
+ * @param filePath - File path
+ * @param lineNumber - Line number in JSONL
+ * @returns DetectedError if triggered, null otherwise
+ */
+export function checkCompactTrigger(
+  message: ParsedMessage,
+  trigger: NotificationTrigger,
+  sessionId: string,
+  projectId: string,
+  filePath: string,
+  lineNumber: number
+): DetectedError | null {
+  if (!isParsedCompactMessage(message)) {
+    return null;
+  }
+
+  const projectName = extractProjectName(projectId);
+  const cwd = typeof message.cwd === 'string' ? message.cwd : undefined;
+
+  return createDetectedError({
+    sessionId,
+    projectId,
+    filePath,
+    projectName,
+    lineNumber,
+    source: 'system',
+    message: 'Conversation compacted',
+    timestamp: message.timestamp ? new Date(message.timestamp) : new Date(),
+    cwd,
+    triggerColor: trigger.color,
+    triggerId: trigger.id,
+    triggerName: trigger.name,
+  });
 }
