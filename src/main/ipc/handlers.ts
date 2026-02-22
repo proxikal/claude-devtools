@@ -26,6 +26,11 @@ import {
 const logger = createLogger('IPC:handlers');
 import { registerNotificationHandlers, removeNotificationHandlers } from './notifications';
 import {
+  initializeProjectAnalyticsHandlers,
+  registerProjectAnalyticsHandlers,
+  removeProjectAnalyticsHandlers,
+} from './projectAnalytics';
+import {
   initializeProjectHandlers,
   registerProjectHandlers,
   removeProjectHandlers,
@@ -36,7 +41,6 @@ import {
   registerSessionHandlers,
   removeSessionHandlers,
 } from './sessions';
-import { initializeUsageHandlers, registerUsageHandlers, removeUsageHandlers } from './usage';
 import { initializeSshHandlers, registerSshHandlers, removeSshHandlers } from './ssh';
 import {
   initializeSubagentHandlers,
@@ -48,6 +52,7 @@ import {
   registerUpdaterHandlers,
   removeUpdaterHandlers,
 } from './updater';
+import { initializeUsageHandlers, registerUsageHandlers, removeUsageHandlers } from './usage';
 import { registerUtilityHandlers, removeUtilityHandlers } from './utility';
 import { registerValidationHandlers, removeValidationHandlers } from './validation';
 import { registerWindowHandlers, removeWindowHandlers } from './window';
@@ -84,6 +89,7 @@ export function initializeIpcHandlers(
     onClaudeRootPathUpdated: contextCallbacks.onClaudeRootPathUpdated,
   });
   initializeUsageHandlers(registry);
+  initializeProjectAnalyticsHandlers(registry);
 
   // Register all handlers
   registerProjectHandlers(ipcMain);
@@ -99,6 +105,7 @@ export function initializeIpcHandlers(
   registerContextHandlers(ipcMain);
   registerWindowHandlers(ipcMain);
   registerUsageHandlers(ipcMain);
+  registerProjectAnalyticsHandlers(ipcMain);
 
   logger.info('All handlers registered');
 }
@@ -121,6 +128,7 @@ export function removeIpcHandlers(): void {
   removeContextHandlers(ipcMain);
   removeWindowHandlers(ipcMain);
   removeUsageHandlers(ipcMain);
+  removeProjectAnalyticsHandlers(ipcMain);
 
   logger.info('All handlers removed');
 }
