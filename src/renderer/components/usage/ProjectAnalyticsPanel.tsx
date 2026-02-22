@@ -18,9 +18,21 @@ import { useEffect, useState } from 'react';
 
 import { api } from '@renderer/api';
 import { formatCostUsd } from '@shared/utils/usageEstimator';
-import { AlertCircle, ArrowLeft, Loader2 } from 'lucide-react';
+import {
+  AlertCircle,
+  AlertTriangle,
+  ArrowLeft,
+  CheckCircle,
+  ChevronDown,
+  ChevronUp,
+  Loader2,
+} from 'lucide-react';
 
-import type { DailyBucket, ProjectAnalyticsSummary } from '@shared/types/projectAnalytics';
+import type {
+  DailyBucket,
+  InsightSignals,
+  ProjectAnalyticsSummary,
+} from '@shared/types/projectAnalytics';
 
 // =============================================================================
 // Helpers
@@ -617,6 +629,150 @@ const ValueSection = ({ valueRatio }: ValueSectionProps): React.JSX.Element | nu
 };
 
 // =============================================================================
+// Insights Section
+// =============================================================================
+
+interface InsightRow {
+  key: string;
+  message: string;
+  detail: string;
+}
+
+function buildInsightRows(insights: InsightSignals): InsightRow[] {
+  const rows: InsightRow[] = [];
+
+  if (insights.peakHourWarning) {
+    const { hours, sessionCount, tokenShare } = insights.peakHourWarning;
+    const hourList = hours.map((h) => formatHour(h)).join(', ');
+    rows.push({
+      key: 'peak-hour',
+      message: `Most heavy sessions run between ${hourList}`,
+      detail: `${sessionCount} ${sessionCount === 1 ? 'day' : 'days'} with significant late-hour activity (${Math.round(tokenShare * 100)}% of output tokens). Late-night sessions tend toward more retries and context thrash.`,
+    });
+  }
+
+  if (insights.retryLoopWarning) {
+    const { affectedSessions, avgFailureRate } = insights.retryLoopWarning;
+    rows.push({
+      key: 'retry-loop',
+      message: `${affectedSessions.toLocaleString('en-US')} sessions had high tool failure rates`,
+      detail: `Average failure rate ${Math.round(avgFailureRate * 100)}% across affected sessions. Usually means a command or path is wrong and being retried. Catching it earlier saves significant tokens.`,
+    });
+  }
+
+  if (insights.contextThrashWarning) {
+    const { affectedSessions, avgRatio } = insights.contextThrashWarning;
+    rows.push({
+      key: 'context-thrash',
+      message: `${affectedSessions.toLocaleString('en-US')} sessions had low output-to-context ratios`,
+      detail: `Average output/context ratio ${Math.round(avgRatio * 100)}%. Large context with small output can mean loading files that weren't needed or frequent topic changes mid-session.`,
+    });
+  }
+
+  if (insights.shortSessionChurn) {
+    const { count, percentage } = insights.shortSessionChurn;
+    rows.push({
+      key: 'short-session',
+      message: `${count.toLocaleString('en-US')} sessions were under 2 minutes`,
+      detail: `${Math.round(percentage * 100)}% of total sessions. Frequent restarts can mean small prompt improvements could have continued the existing session instead.`,
+    });
+  }
+
+  return rows;
+}
+
+interface InsightRowItemProps {
+  row: InsightRow;
+}
+
+const InsightRowItem = ({ row }: InsightRowItemProps): React.JSX.Element => {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <div className="rounded-lg px-4 py-3" style={{ border: '1px solid var(--color-border)' }}>
+      <button
+        className="flex w-full items-start gap-3 text-left"
+        onClick={() => setExpanded((v) => !v)}
+      >
+        <AlertTriangle className="mt-0.5 size-4 shrink-0" style={{ color: '#f59e0b' }} />
+        <span className="flex-1 text-sm" style={{ color: 'var(--color-text)' }}>
+          {row.message}
+        </span>
+        {expanded ? (
+          <ChevronUp
+            className="mt-0.5 size-3.5 shrink-0"
+            style={{ color: 'var(--color-text-muted)' }}
+          />
+        ) : (
+          <ChevronDown
+            className="mt-0.5 size-3.5 shrink-0"
+            style={{ color: 'var(--color-text-muted)' }}
+          />
+        )}
+      </button>
+      {expanded && (
+        <p
+          className="mt-2 pl-7 text-xs leading-relaxed"
+          style={{ color: 'var(--color-text-muted)' }}
+        >
+          {row.detail}
+        </p>
+      )}
+    </div>
+  );
+};
+
+interface InsightsSectionProps {
+  insights: InsightSignals;
+}
+
+const InsightsSection = ({ insights }: InsightsSectionProps): React.JSX.Element => {
+  const [enabled, setEnabled] = useState(false);
+  const rows = buildInsightRows(insights);
+
+  return (
+    <div className="mb-8">
+      {/* Header with toggle */}
+      <div
+        className="mb-3 flex items-center justify-between pb-2"
+        style={{ borderBottom: '1px solid var(--color-border)' }}
+      >
+        <span
+          className="text-xs font-semibold uppercase tracking-wider"
+          style={{ color: 'var(--color-text-muted)' }}
+        >
+          Usage Insights
+        </span>
+        <button
+          onClick={() => setEnabled((v) => !v)}
+          className="text-[10px] font-medium transition-opacity hover:opacity-70"
+          style={{ color: enabled ? '#6366f1' : 'var(--color-text-muted)' }}
+        >
+          {enabled ? 'Hide' : 'Show'}
+        </button>
+      </div>
+
+      {enabled && (
+        <div className="space-y-2">
+          {rows.length === 0 ? (
+            <div
+              className="flex items-center gap-3 rounded-lg px-4 py-3"
+              style={{ border: '1px solid var(--color-border)' }}
+            >
+              <CheckCircle className="size-4 shrink-0" style={{ color: '#10b981' }} />
+              <span className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
+                No unusual patterns detected for this project.
+              </span>
+            </div>
+          ) : (
+            rows.map((row) => <InsightRowItem key={row.key} row={row} />)
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// =============================================================================
 // Sessions List
 // =============================================================================
 
@@ -896,6 +1052,7 @@ export const ProjectAnalyticsPanel = ({
             <PeakMoments summary={summary} />
             <ByModel byModel={summary.byModel} />
             <ValueSection valueRatio={summary.valueRatio} />
+            <InsightsSection insights={summary.insights} />
             <SessionsList sessions={summary.sessions} />
           </div>
         )}
