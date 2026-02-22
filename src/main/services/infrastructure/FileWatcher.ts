@@ -110,6 +110,10 @@ export class FileWatcher extends EventEmitter {
   private pendingReprocess = new Set<string>();
   /** Track last known isOngoing state per file for session_end detection */
   private lastOngoingState = new Map<string, boolean>();
+  /** Pending session_end notification timers — debounced to avoid firing between turns */
+  private pendingSessionEndTimers = new Map<string, NodeJS.Timeout>();
+  /** Debounce delay for session_end: wait this long after isOngoing→false before notifying */
+  private static readonly SESSION_END_DEBOUNCE_MS = 3000;
   /** Flag to prevent reuse after disposal */
   private disposed = false;
 
@@ -216,6 +220,11 @@ export class FileWatcher extends EventEmitter {
     this.activeSessionFiles.clear();
     this.processingInProgress.clear();
     this.pendingReprocess.clear();
+    this.lastOngoingState.clear();
+    for (const timer of this.pendingSessionEndTimers.values()) {
+      clearTimeout(timer);
+    }
+    this.pendingSessionEndTimers.clear();
 
     logger.info('Stopped watching');
   }
@@ -269,6 +278,11 @@ export class FileWatcher extends EventEmitter {
     this.polledFileSizes.clear();
     this.processingInProgress.clear();
     this.pendingReprocess.clear();
+    this.lastOngoingState.clear();
+    for (const timer of this.pendingSessionEndTimers.values()) {
+      clearTimeout(timer);
+    }
+    this.pendingSessionEndTimers.clear();
 
     // 7. Remove all EventEmitter listeners (MUST be last)
     this.removeAllListeners();
@@ -806,33 +820,61 @@ export class FileWatcher extends EventEmitter {
       }
     }
 
-    // session_end: fire when isOngoing transitions true → false
+    // session_end: fire when isOngoing transitions true → false, with debounce.
+    // A debounce is required because isOngoing briefly becomes false between turns
+    // (after Claude responds, before the user sends the next message). We wait
+    // SESSION_END_DEBOUNCE_MS after the transition — if the session goes active again
+    // during that window, we cancel the pending notification.
     if (sessionEndTriggers.length > 0) {
       const isOngoing = checkMessagesOngoing(allMessages);
       const previousOngoing = this.lastOngoingState.get(filePath);
 
-      // Only fire if we previously knew it was ongoing (not undefined = first read)
-      if (previousOngoing === true && !isOngoing) {
+      if (isOngoing) {
+        // Session is active — cancel any pending session_end notification for this file
+        const existing = this.pendingSessionEndTimers.get(filePath);
+        if (existing) {
+          clearTimeout(existing);
+          this.pendingSessionEndTimers.delete(filePath);
+        }
+      } else if (previousOngoing === true) {
+        // Transitioned to not-ongoing — schedule notification after debounce window.
+        // Cancel any existing timer first (e.g., from a previous partial write).
+        const existing = this.pendingSessionEndTimers.get(filePath);
+        if (existing) {
+          clearTimeout(existing);
+        }
+
         const lastOutput = extractLastAssistantText(allMessages);
         const endMessage = lastOutput ?? 'Session completed';
-        for (const trigger of sessionEndTriggers) {
-          const error = createDetectedError({
-            sessionId,
-            projectId,
-            filePath,
-            projectName,
-            lineNumber: allMessages.length,
-            source: 'session',
-            message: endMessage,
-            timestamp: now,
-            cwd,
-            triggerColor: trigger.color,
-            triggerId: trigger.id,
-            triggerName: trigger.name,
-          });
-          if (subagentId) error.subagentId = subagentId;
-          await this.notificationManager.addError(error);
-        }
+
+        const timer = setTimeout(() => {
+          this.pendingSessionEndTimers.delete(filePath);
+          // Confirm still not ongoing at fire time (guard against race)
+          if (this.lastOngoingState.get(filePath) === false && this.notificationManager) {
+            for (const trigger of sessionEndTriggers) {
+              const error = createDetectedError({
+                sessionId,
+                projectId,
+                filePath,
+                projectName,
+                lineNumber: allMessages.length,
+                source: 'session',
+                message: endMessage,
+                timestamp: now,
+                cwd,
+                triggerColor: trigger.color,
+                triggerId: trigger.id,
+                triggerName: trigger.name,
+              });
+              if (subagentId) error.subagentId = subagentId;
+              this.notificationManager.addError(error).catch((e) => {
+                logger.error('FileWatcher: Failed to add session_end notification:', e);
+              });
+            }
+          }
+        }, FileWatcher.SESSION_END_DEBOUNCE_MS);
+
+        this.pendingSessionEndTimers.set(filePath, timer);
       }
 
       this.lastOngoingState.set(filePath, isOngoing);
@@ -848,6 +890,11 @@ export class FileWatcher extends EventEmitter {
     this.lastProcessedSize.delete(filePath);
     this.activeSessionFiles.delete(filePath);
     this.lastOngoingState.delete(filePath);
+    const timer = this.pendingSessionEndTimers.get(filePath);
+    if (timer) {
+      clearTimeout(timer);
+      this.pendingSessionEndTimers.delete(filePath);
+    }
   }
 
   /**
@@ -858,6 +905,10 @@ export class FileWatcher extends EventEmitter {
     this.lastProcessedSize.clear();
     this.activeSessionFiles.clear();
     this.lastOngoingState.clear();
+    for (const timer of this.pendingSessionEndTimers.values()) {
+      clearTimeout(timer);
+    }
+    this.pendingSessionEndTimers.clear();
   }
 
   /**
