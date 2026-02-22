@@ -14,7 +14,7 @@
 
 import { useEffect, useState } from 'react';
 
-import { isElectronMode } from '@renderer/api';
+import { api } from '@renderer/api';
 import { formatCostUsd } from '@shared/utils/costEstimator';
 import { AlertCircle, Clock, DollarSign, Loader2, TrendingUp, Zap } from 'lucide-react';
 
@@ -170,15 +170,10 @@ export const SpendDashboard = (): React.JSX.Element => {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!isElectronMode()) {
-      setLoading(false);
-      return;
-    }
-
     setLoading(true);
     setError(null);
 
-    void window.electronAPI.spend
+    void api.spend
       .getSummary()
       .then((data) => {
         setSummary(data);
