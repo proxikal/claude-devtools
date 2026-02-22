@@ -181,6 +181,10 @@ export interface GeneralConfig {
   theme: 'dark' | 'light' | 'system';
   defaultTab: 'dashboard' | 'last-session';
   claudeRootPath: string | null;
+  /** Auto-expand all AI response groups when opening a transcript */
+  autoExpandAIGroups: boolean;
+  /** Tool names that should be auto-expanded when rendered */
+  autoExpandTools?: string[];
 }
 
 export interface DisplayConfig {
@@ -248,6 +252,8 @@ const DEFAULT_CONFIG: AppConfig = {
     theme: 'dark',
     defaultTab: 'dashboard',
     claudeRootPath: null,
+    autoExpandAIGroups: false,
+    autoExpandTools: [],
   },
   display: {
     showTimestamps: true,

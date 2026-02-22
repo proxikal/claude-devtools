@@ -128,6 +128,7 @@ export const SettingsView = (): React.JSX.Element | null => {
               saving={saving}
               onGeneralToggle={handlers.handleGeneralToggle}
               onThemeChange={handlers.handleThemeChange}
+              onAutoExpandToolsChange={handlers.handleAutoExpandToolsChange}
             />
           )}
 

@@ -11,10 +11,12 @@ import { getFullResetState } from '@renderer/store/utils/stateResetHelpers';
 import { Check, Copy, FolderOpen, Laptop, Loader2, RotateCcw } from 'lucide-react';
 
 import { SettingRow, SettingsSectionHeader, SettingsSelect, SettingsToggle } from '../components';
+import { ToolAutoExpandModal } from '../components/ToolAutoExpandModal';
 
 import type { SafeConfig } from '../hooks/useSettingsConfig';
 import type { ClaudeRootInfo, WslClaudeRootCandidate } from '@shared/types';
 import type { HttpServerStatus } from '@shared/types/api';
+import type { AppConfig } from '@shared/types/notifications';
 
 // Theme options
 const THEME_OPTIONS = [
@@ -26,8 +28,9 @@ const THEME_OPTIONS = [
 interface GeneralSectionProps {
   readonly safeConfig: SafeConfig;
   readonly saving: boolean;
-  readonly onGeneralToggle: (key: 'launchAtLogin' | 'showDockIcon', value: boolean) => void;
+  readonly onGeneralToggle: (key: keyof AppConfig['general'], value: boolean) => void;
   readonly onThemeChange: (value: 'dark' | 'light' | 'system') => void;
+  readonly onAutoExpandToolsChange: (tools: string[]) => void;
 }
 
 export const GeneralSection = ({
@@ -35,6 +38,7 @@ export const GeneralSection = ({
   saving,
   onGeneralToggle,
   onThemeChange,
+  onAutoExpandToolsChange,
 }: GeneralSectionProps): React.JSX.Element => {
   const [serverStatus, setServerStatus] = useState<HttpServerStatus>({
     running: false,
@@ -42,6 +46,7 @@ export const GeneralSection = ({
   });
   const [serverLoading, setServerLoading] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [showToolExpandModal, setShowToolExpandModal] = useState(false);
 
   // Claude Root state
   const connectionMode = useStore((s) => s.connectionMode);
@@ -286,6 +291,47 @@ export const GeneralSection = ({
           disabled={saving}
         />
       </SettingRow>
+      <SettingRow
+        label="Expand AI responses by default"
+        description="Automatically expand each response turn when opening a transcript or receiving a new message"
+      >
+        <SettingsToggle
+          enabled={safeConfig.general.autoExpandAIGroups}
+          onChange={(v) => onGeneralToggle('autoExpandAIGroups', v)}
+          disabled={saving}
+        />
+      </SettingRow>
+      <SettingRow
+        label="Auto-expand tool calls"
+        description="Automatically expand selected tool types when a transcript loads"
+      >
+        <button
+          onClick={() => setShowToolExpandModal(true)}
+          disabled={saving}
+          className="flex items-center gap-2 rounded-md px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50"
+          style={{
+            backgroundColor: 'var(--color-surface-raised)',
+            color: 'var(--color-text-secondary)',
+            border: '1px solid var(--color-border-emphasis)',
+          }}
+        >
+          {safeConfig.general.autoExpandTools.length === 0
+            ? 'None'
+            : `${safeConfig.general.autoExpandTools.length} tool${safeConfig.general.autoExpandTools.length === 1 ? '' : 's'}`}
+          <span style={{ color: 'var(--color-text-muted)' }}>·</span>
+          Configure
+        </button>
+      </SettingRow>
+
+      {showToolExpandModal && (
+        <ToolAutoExpandModal
+          enabledTools={safeConfig.general.autoExpandTools}
+          onClose={(tools) => {
+            setShowToolExpandModal(false);
+            onAutoExpandToolsChange(tools);
+          }}
+        />
+      )}
 
       {isElectron && (
         <>
