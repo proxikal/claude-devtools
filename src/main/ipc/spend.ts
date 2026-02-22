@@ -49,6 +49,7 @@ export function initializeSpendHandlers(contextRegistry: ServiceContextRegistry)
 }
 
 export function registerSpendHandlers(ipcMain: IpcMain): void {
+  cachedSummary = null; // Clear stale cache on each app startup
   ipcMain.handle('get-spend-summary', handleGetSpendSummary);
   logger.info('Spend handlers registered');
 }
