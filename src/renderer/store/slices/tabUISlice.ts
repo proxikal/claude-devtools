@@ -42,6 +42,9 @@ export interface TabUIState {
 
   /** Saved scroll position for restoring when switching back to this tab */
   savedScrollTop?: number;
+
+  /** Which AI groups have their task summary expanded (by aiGroupId) */
+  expandedTaskSummaryIds: Set<string>;
 }
 
 /**
@@ -55,6 +58,7 @@ function createDefaultTabUIState(): TabUIState {
     showContextPanel: false,
     selectedContextPhase: null,
     savedScrollTop: undefined,
+    expandedTaskSummaryIds: new Set(),
   };
 }
 
@@ -111,6 +115,12 @@ export interface TabUISlice {
   saveScrollPositionForTab: (tabId: string, scrollTop: number) => void;
   /** Get saved scroll position for a specific tab */
   getScrollPositionForTab: (tabId: string) => number | undefined;
+
+  // Task summary expansion (per-tab)
+  /** Toggle task summary expansion for a specific AI group in a specific tab */
+  toggleTaskSummaryForTab: (tabId: string, aiGroupId: string) => void;
+  /** Check if task summary is expanded for a specific AI group in a specific tab */
+  isTaskSummaryExpandedForTab: (tabId: string, aiGroupId: string) => boolean;
 }
 
 // =============================================================================
@@ -315,5 +325,30 @@ export const createTabUISlice: StateCreator<AppState, [], [], TabUISlice> = (set
   getScrollPositionForTab: (tabId: string) => {
     const tabState = get().tabUIStates.get(tabId);
     return tabState?.savedScrollTop;
+  },
+
+  // ==========================================================================
+  // Task Summary Expansion
+  // ==========================================================================
+
+  toggleTaskSummaryForTab: (tabId: string, aiGroupId: string) => {
+    const state = get();
+    const newMap = new Map(state.tabUIStates);
+    const tabState = newMap.get(tabId) ?? createDefaultTabUIState();
+
+    const newExpandedIds = new Set(tabState.expandedTaskSummaryIds);
+    if (newExpandedIds.has(aiGroupId)) {
+      newExpandedIds.delete(aiGroupId);
+    } else {
+      newExpandedIds.add(aiGroupId);
+    }
+
+    newMap.set(tabId, { ...tabState, expandedTaskSummaryIds: newExpandedIds });
+    set({ tabUIStates: newMap });
+  },
+
+  isTaskSummaryExpandedForTab: (tabId: string, aiGroupId: string) => {
+    const tabState = get().tabUIStates.get(tabId);
+    return tabState?.expandedTaskSummaryIds.has(aiGroupId) ?? false;
   },
 });
