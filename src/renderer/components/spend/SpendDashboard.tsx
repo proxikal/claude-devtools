@@ -101,14 +101,14 @@ const BarChart = ({ daily }: BarChartProps): React.JSX.Element => {
 
   return (
     <div className="flex flex-col gap-1">
-      <div className="flex h-24 items-end gap-1">
+      <div className="flex h-24 gap-1">
         {days.map((day) => {
           const heightPct = Math.max((day.costUsd / maxCost) * 100, day.costUsd > 0 ? 4 : 0);
           const isToday = day.date === todayStr;
           return (
             <div
               key={day.date}
-              className="group relative flex flex-1 flex-col items-center justify-end"
+              className="group relative flex flex-1 flex-col justify-end"
               title={`${relativeDate(day.date)}: ${formatCostUsd(day.costUsd)} · ${day.sessions} sessions`}
             >
               <div
