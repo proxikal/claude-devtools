@@ -426,6 +426,11 @@ export interface ElectronAPI {
 
   // HTTP Server API
   httpServer: HttpServerAPI;
+
+  // Spend / Cost API
+  spend: {
+    getSummary: () => Promise<import('./spend').SpendSummary>;
+  };
 }
 
 // =============================================================================

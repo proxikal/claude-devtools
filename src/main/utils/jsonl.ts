@@ -266,6 +266,111 @@ export function calculateMetrics(messages: ParsedMessage[]): SessionMetrics {
 }
 
 // =============================================================================
+// Session Cost Analysis
+// =============================================================================
+
+export interface SessionCostData {
+  /** Primary model seen in this session (from first assistant message with model field) */
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+  /** ISO date of first message: YYYY-MM-DD, or empty string if unavailable */
+  date: string;
+  /** First real user message text, capped at 120 chars */
+  firstMessage?: string;
+}
+
+/**
+ * Streaming single-pass cost data extraction from a session JSONL file.
+ * Reads only what is needed for spend analysis: model, token counts, date.
+ * Much faster than full parseJsonlFile for large files.
+ */
+export async function analyzeSessionCostData(
+  filePath: string,
+  fsProvider: FileSystemProvider = defaultProvider
+): Promise<SessionCostData> {
+  const empty: SessionCostData = {
+    model: '',
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheReadTokens: 0,
+    cacheCreationTokens: 0,
+    date: '',
+  };
+
+  if (!(await fsProvider.exists(filePath))) return empty;
+
+  const fileStream = fsProvider.createReadStream(filePath, { encoding: 'utf8' });
+  const rl = readline.createInterface({ input: fileStream, crlfDelay: Infinity });
+
+  let model = '';
+  let inputTokens = 0;
+  let outputTokens = 0;
+  let cacheReadTokens = 0;
+  let cacheCreationTokens = 0;
+  let date = '';
+  let firstMessage: string | undefined;
+
+  for await (const line of rl) {
+    if (!line.trim()) continue;
+
+    let entry: Record<string, unknown>;
+    try {
+      entry = JSON.parse(line) as Record<string, unknown>;
+    } catch {
+      continue;
+    }
+
+    const type = entry.type as string | undefined;
+
+    if (type === 'assistant') {
+      // Grab model from first assistant message
+      if (!model && typeof entry.model === 'string') {
+        model = entry.model;
+      }
+
+      // Sum usage
+      const usage = entry.usage as Record<string, number> | undefined;
+      if (usage) {
+        inputTokens += usage.input_tokens ?? 0;
+        outputTokens += usage.output_tokens ?? 0;
+        cacheReadTokens += usage.cache_read_input_tokens ?? 0;
+        cacheCreationTokens += usage.cache_creation_input_tokens ?? 0;
+      }
+
+      // Grab date from timestamp of first assistant message
+      if (!date && typeof entry.timestamp === 'string') {
+        date = entry.timestamp.slice(0, 10); // YYYY-MM-DD
+      }
+    }
+
+    // Grab first real user message for display
+    if (!firstMessage && type === 'user') {
+      const content = entry.message as Record<string, unknown> | undefined;
+      const isMeta = content?.isMeta;
+      if (!isMeta) {
+        const msgContent = content?.content;
+        if (typeof msgContent === 'string' && msgContent.trim()) {
+          firstMessage = msgContent.slice(0, 120);
+        }
+      }
+    }
+  }
+
+  return {
+    model,
+    inputTokens,
+    outputTokens,
+    cacheReadTokens,
+    cacheCreationTokens,
+    date,
+    firstMessage,
+  };
+}
+
+// =============================================================================
 // Utility Functions
 // =============================================================================
 

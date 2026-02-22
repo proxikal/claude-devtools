@@ -36,6 +36,7 @@ import {
   registerSessionHandlers,
   removeSessionHandlers,
 } from './sessions';
+import { initializeSpendHandlers, registerSpendHandlers, removeSpendHandlers } from './spend';
 import { initializeSshHandlers, registerSshHandlers, removeSshHandlers } from './ssh';
 import {
   initializeSubagentHandlers,
@@ -82,6 +83,7 @@ export function initializeIpcHandlers(
   initializeConfigHandlers({
     onClaudeRootPathUpdated: contextCallbacks.onClaudeRootPathUpdated,
   });
+  initializeSpendHandlers(registry);
 
   // Register all handlers
   registerProjectHandlers(ipcMain);
@@ -96,6 +98,7 @@ export function initializeIpcHandlers(
   registerSshHandlers(ipcMain);
   registerContextHandlers(ipcMain);
   registerWindowHandlers(ipcMain);
+  registerSpendHandlers(ipcMain);
 
   logger.info('All handlers registered');
 }
@@ -117,6 +120,7 @@ export function removeIpcHandlers(): void {
   removeSshHandlers(ipcMain);
   removeContextHandlers(ipcMain);
   removeWindowHandlers(ipcMain);
+  removeSpendHandlers(ipcMain);
 
   logger.info('All handlers removed');
 }
