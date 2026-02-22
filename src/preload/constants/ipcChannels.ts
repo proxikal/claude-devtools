@@ -171,3 +171,10 @@ export const WINDOW_CLOSE = 'window:close';
 
 /** Whether the window is currently maximized */
 export const WINDOW_IS_MAXIMIZED = 'window:isMaximized';
+
+// =============================================================================
+// Spend API Channels
+// =============================================================================
+
+/** Get aggregated spend summary across all projects */
+export const SPEND_GET_SUMMARY = 'get-spend-summary';
