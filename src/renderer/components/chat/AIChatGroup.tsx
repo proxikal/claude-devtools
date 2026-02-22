@@ -16,6 +16,7 @@ import { TokenUsageDisplay } from '../common/TokenUsageDisplay';
 import { ContextBadge } from './ContextBadge';
 import { DisplayItemList } from './DisplayItemList';
 import { LastOutputDisplay } from './LastOutputDisplay';
+import { TaskSummary } from './TaskSummary';
 
 import type { ContextStats } from '@renderer/types/contextInjection';
 import type {
@@ -541,6 +542,9 @@ const AIChatGroupInner = ({
           isSessionOngoing={isSessionOngoing}
         />
       </div>
+
+      {/* Task Summary — collapsed row below output, shown when group has tool activity */}
+      {!(aiGroup.isOngoing ?? false) && <TaskSummary aiGroup={aiGroup} />}
     </div>
   );
 };
