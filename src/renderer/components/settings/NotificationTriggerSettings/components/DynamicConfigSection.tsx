@@ -140,6 +140,35 @@ export const DynamicConfigSection = ({
         </div>
       )}
 
+      {/* Session Start Mode */}
+      {mode === 'session_start' && (
+        <div className="py-2">
+          <p className="text-sm text-text-muted">
+            Triggers when a new session file is detected — useful for knowing when an agent starts
+            working.
+          </p>
+        </div>
+      )}
+
+      {/* Session End Mode */}
+      {mode === 'session_end' && (
+        <div className="py-2">
+          <p className="text-sm text-text-muted">
+            Triggers when a session transitions from active to complete — useful for knowing when an
+            agent finishes.
+          </p>
+        </div>
+      )}
+
+      {/* Compact Mode */}
+      {mode === 'compact' && (
+        <div className="py-2">
+          <p className="text-sm text-text-muted">
+            Triggers when a conversation compaction event is detected in a session.
+          </p>
+        </div>
+      )}
+
       {/* Token Threshold Mode */}
       {mode === 'token_threshold' && (
         <div className="space-y-3">

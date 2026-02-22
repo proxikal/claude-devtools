@@ -2,7 +2,7 @@
  * Constants for NotificationTriggerSettings.
  */
 
-import { Activity, AlertCircle, Search } from 'lucide-react';
+import { Activity, AlertCircle, Archive, LogIn, LogOut, Search } from 'lucide-react';
 
 import type { ModeConfig } from '../types';
 import type { TriggerContentType, TriggerToolName } from '@renderer/types/data';
@@ -47,4 +47,7 @@ export const MODE_OPTIONS: ModeConfig[] = [
   { value: 'error_status', label: 'Execution Error', icon: AlertCircle },
   { value: 'content_match', label: 'Content Pattern', icon: Search },
   { value: 'token_threshold', label: 'High Token Usage', icon: Activity },
+  { value: 'session_start', label: 'Session Start', icon: LogIn },
+  { value: 'session_end', label: 'Session End', icon: LogOut },
+  { value: 'compact', label: 'Compact Event', icon: Archive },
 ];

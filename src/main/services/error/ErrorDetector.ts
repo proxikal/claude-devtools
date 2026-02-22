@@ -28,6 +28,7 @@ import { ConfigManager, type NotificationTrigger } from '../infrastructure/Confi
 
 import { type DetectedError } from './ErrorMessageBuilder';
 import {
+  checkCompactTrigger,
   checkTokenThresholdTrigger,
   checkToolResultTrigger,
   checkToolUseTrigger,
@@ -153,6 +154,19 @@ class ErrorDetector {
         filePath,
         lineNumber
       );
+    }
+
+    // Handle compact mode (session-level lifecycle event - per message)
+    if (effectiveMode === 'compact') {
+      const error = checkCompactTrigger(
+        message,
+        trigger,
+        sessionId,
+        projectId,
+        filePath,
+        lineNumber
+      );
+      return error ? [error] : [];
     }
 
     // Handle tool_result triggers

@@ -136,8 +136,17 @@ export type TriggerMatchField =
  * - 'error_status': Triggers when is_error is true (simple boolean check)
  * - 'content_match': Triggers when content matches a regex pattern
  * - 'token_threshold': Triggers when token count exceeds threshold
+ * - 'session_start': Triggers when a new session JSONL file is first detected
+ * - 'session_end': Triggers when a session transitions from active to complete
+ * - 'compact': Triggers when a conversation compaction event is detected
  */
-export type TriggerMode = 'error_status' | 'content_match' | 'token_threshold';
+export type TriggerMode =
+  | 'error_status'
+  | 'content_match'
+  | 'token_threshold'
+  | 'session_start'
+  | 'session_end'
+  | 'compact';
 
 /**
  * Token type for threshold triggers.

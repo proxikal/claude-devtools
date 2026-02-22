@@ -74,7 +74,11 @@ function isValidTrigger(trigger: unknown): trigger is NotificationTrigger {
     return false;
   }
 
+  const lifecycleModes = ['session_start', 'session_end', 'compact'];
+  const isLifecycleMode = lifecycleModes.includes(trigger.mode as string);
+
   if (
+    !isLifecycleMode &&
     trigger.contentType !== 'tool_result' &&
     trigger.contentType !== 'tool_use' &&
     trigger.contentType !== 'thinking' &&
@@ -86,7 +90,10 @@ function isValidTrigger(trigger: unknown): trigger is NotificationTrigger {
   if (
     trigger.mode !== 'error_status' &&
     trigger.mode !== 'content_match' &&
-    trigger.mode !== 'token_threshold'
+    trigger.mode !== 'token_threshold' &&
+    trigger.mode !== 'session_start' &&
+    trigger.mode !== 'session_end' &&
+    trigger.mode !== 'compact'
   ) {
     return false;
   }
