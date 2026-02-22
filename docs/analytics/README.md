@@ -63,6 +63,7 @@ any of its foundational pieces.
 | [phases/phase-5-sessions.md](./phases/phase-5-sessions.md) | Full session list with subagent badges and sort |
 | [phases/phase-6-polish.md](./phases/phase-6-polish.md) | Visual polish, empty states, performance, full quality pass |
 | [phases/phase-7-insights.md](./phases/phase-7-insights.md) | Usage Insights — pattern detection, habit coaching, toggleable |
+| [future-session-report.md](./future-session-report.md) | Possible future: per-session analysis report (see upstream issue #61) |
 
 ---
 
