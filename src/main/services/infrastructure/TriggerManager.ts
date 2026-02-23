@@ -162,9 +162,7 @@ export class TriggerManager {
   /**
    * Infers trigger mode from trigger properties for backward compatibility.
    */
-  private inferMode(
-    trigger: Partial<NotificationTrigger>
-  ): 'error_status' | 'content_match' | 'token_threshold' {
+  private inferMode(trigger: Partial<NotificationTrigger>): NotificationTrigger['mode'] {
     if (trigger.requireError) return 'error_status';
     if (trigger.matchPattern || trigger.matchField) return 'content_match';
     if (trigger.tokenThreshold !== undefined) return 'token_threshold';
@@ -211,7 +209,14 @@ export class TriggerManager {
       errors.push('Trigger name is required');
     }
 
-    if (!trigger.contentType) {
+    const lifecycleModes: NotificationTrigger['mode'][] = [
+      'session_start',
+      'session_end',
+      'compact',
+    ];
+    const isLifecycleMode = lifecycleModes.includes(trigger.mode);
+
+    if (!isLifecycleMode && !trigger.contentType) {
       errors.push('Content type is required');
     }
 

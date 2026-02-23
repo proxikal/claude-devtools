@@ -12,7 +12,8 @@
 
 import { type FileChangeEvent, type ParsedMessage } from '@main/types';
 import { parseJsonlFile, parseJsonlLine } from '@main/utils/jsonl';
-import { getProjectsBasePath, getTodosBasePath } from '@main/utils/pathDecoder';
+import { extractProjectName, getProjectsBasePath, getTodosBasePath } from '@main/utils/pathDecoder';
+import { checkMessagesOngoing } from '@main/utils/sessionStateDetection';
 import { createLogger } from '@shared/utils/logger';
 import { EventEmitter } from 'events';
 import * as fs from 'fs';
@@ -20,6 +21,7 @@ import * as path from 'path';
 
 import { projectPathResolver } from '../discovery/ProjectPathResolver';
 import { errorDetector } from '../error/ErrorDetector';
+import { createDetectedError } from '../error/ErrorMessageBuilder';
 
 import { ConfigManager } from './ConfigManager';
 import { type DataCache } from './DataCache';
@@ -49,6 +51,28 @@ interface ActiveSessionFile {
   projectId: string;
   sessionId: string;
   subagentId?: string;
+}
+
+/**
+ * Extracts the last assistant text output from a session's parsed messages.
+ * Used to populate session_end notification bodies with the agent's final response.
+ *
+ * @param messages - All parsed messages from the session
+ * @returns The last assistant text, or null if none found
+ */
+function extractLastAssistantText(messages: ParsedMessage[]): string | null {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i];
+    if (msg.type === 'assistant' && Array.isArray(msg.content)) {
+      for (let j = msg.content.length - 1; j >= 0; j--) {
+        const block = msg.content[j];
+        if (block.type === 'text' && typeof block.text === 'string' && block.text.trim()) {
+          return block.text.trim();
+        }
+      }
+    }
+  }
+  return null;
 }
 
 export class FileWatcher extends EventEmitter {
@@ -84,6 +108,12 @@ export class FileWatcher extends EventEmitter {
   private processingInProgress = new Set<string>();
   /** Files that need reprocessing after current processing completes */
   private pendingReprocess = new Set<string>();
+  /** Track last known isOngoing state per file for session_end detection */
+  private lastOngoingState = new Map<string, boolean>();
+  /** Pending session_end notification timers — debounced to avoid firing between turns */
+  private pendingSessionEndTimers = new Map<string, NodeJS.Timeout>();
+  /** Debounce delay for session_end: wait this long after isOngoing→false before notifying */
+  private static readonly SESSION_END_DEBOUNCE_MS = 3000;
   /** Flag to prevent reuse after disposal */
   private disposed = false;
 
@@ -190,6 +220,11 @@ export class FileWatcher extends EventEmitter {
     this.activeSessionFiles.clear();
     this.processingInProgress.clear();
     this.pendingReprocess.clear();
+    this.lastOngoingState.clear();
+    for (const timer of this.pendingSessionEndTimers.values()) {
+      clearTimeout(timer);
+    }
+    this.pendingSessionEndTimers.clear();
 
     logger.info('Stopped watching');
   }
@@ -243,6 +278,11 @@ export class FileWatcher extends EventEmitter {
     this.polledFileSizes.clear();
     this.processingInProgress.clear();
     this.pendingReprocess.clear();
+    this.lastOngoingState.clear();
+    for (const timer of this.pendingSessionEndTimers.values()) {
+      clearTimeout(timer);
+    }
+    this.pendingSessionEndTimers.clear();
 
     // 7. Remove all EventEmitter listeners (MUST be last)
     this.removeAllListeners();
@@ -616,8 +656,10 @@ export class FileWatcher extends EventEmitter {
         return;
       }
 
+      const isFirstRead = lastLineCount === 0;
       const canUseIncrementalAppend = lastLineCount > 0 && currentSize > lastSize;
       let newMessages: ParsedMessage[] = [];
+      let allMessages: ParsedMessage[] | null = null;
       let currentLineCount: number;
       let processedSize: number;
 
@@ -629,6 +671,7 @@ export class FileWatcher extends EventEmitter {
       } else {
         // Fallback for first-read, truncation, or rewrite scenarios
         const messages = await parseJsonlFile(filePath);
+        allMessages = messages; // already have all messages
         currentLineCount = messages.length;
         newMessages = messages.slice(lastLineCount);
         // Re-stat after full parse to capture bytes written during the parse
@@ -661,6 +704,18 @@ export class FileWatcher extends EventEmitter {
         await this.notificationManager.addError(error);
       }
 
+      // Check session lifecycle triggers (session_start, session_end).
+      // Pass newMessages and lastLineCount so the method can decide if a full parse is needed.
+      await this.checkSessionLifecycleTriggers(
+        isFirstRead,
+        newMessages,
+        allMessages,
+        sessionId,
+        projectId,
+        filePath,
+        subagentId
+      );
+
       // Update the last processed line count
       this.lastProcessedLineCount.set(filePath, currentLineCount);
       this.lastProcessedSize.set(filePath, processedSize);
@@ -684,6 +739,149 @@ export class FileWatcher extends EventEmitter {
   }
 
   /**
+   * Checks session lifecycle triggers (session_start, session_end) for a file.
+   * Called after incremental message detection. Internally decides whether a full parse
+   * is needed for session_end detection; safely no-ops if ConfigManager is unavailable.
+   *
+   * @param isFirstRead - True if this is the first time we've seen this file
+   * @param newMessages - New messages parsed in this batch
+   * @param lastLineCount - Number of lines processed before this batch
+   * @param cachedAllMessages - Pre-parsed full message list if already available (full-parse path)
+   * @param sessionId - Session ID
+   * @param projectId - Project ID
+   * @param filePath - File path
+   * @param subagentId - Optional subagent ID
+   */
+  private async checkSessionLifecycleTriggers(
+    isFirstRead: boolean,
+    newMessages: ParsedMessage[],
+    cachedAllMessages: ParsedMessage[] | null,
+    sessionId: string,
+    projectId: string,
+    filePath: string,
+    subagentId?: string
+  ): Promise<void> {
+    if (!this.notificationManager) {
+      return;
+    }
+
+    // Safely get triggers — ConfigManager may not be initialized in test environments
+    let sessionStartTriggers: ReturnType<typeof ConfigManager.prototype.getEnabledTriggers>;
+    let sessionEndTriggers: typeof sessionStartTriggers;
+    try {
+      const configManager = ConfigManager.getInstance();
+      const triggers = configManager.getEnabledTriggers();
+      sessionStartTriggers = triggers.filter((t) => t.mode === 'session_start');
+      sessionEndTriggers = triggers.filter((t) => t.mode === 'session_end');
+    } catch {
+      return; // ConfigManager not available
+    }
+
+    if (sessionStartTriggers.length === 0 && sessionEndTriggers.length === 0) {
+      return;
+    }
+
+    // For session_end, we need the full message set to compute isOngoing accurately.
+    // Use the cached full parse if available, otherwise parse the file now.
+    let allMessages: ParsedMessage[];
+    if (cachedAllMessages !== null) {
+      allMessages = cachedAllMessages;
+    } else if (sessionEndTriggers.length > 0) {
+      // Incremental path with session_end triggers: do a full parse
+      allMessages = await parseJsonlFile(filePath);
+    } else {
+      // session_start only — use newMessages as the cwd hint source
+      allMessages = newMessages;
+    }
+
+    const projectName = extractProjectName(projectId);
+    const cwd = allMessages.find((m) => typeof m.cwd === 'string')?.cwd ?? undefined;
+    const now = new Date();
+
+    // session_start: fire only on first read (new file detected)
+    if (isFirstRead && sessionStartTriggers.length > 0) {
+      for (const trigger of sessionStartTriggers) {
+        const error = createDetectedError({
+          sessionId,
+          projectId,
+          filePath,
+          projectName,
+          lineNumber: 1,
+          source: 'session',
+          message: 'Session started',
+          timestamp: now,
+          cwd,
+          triggerColor: trigger.color,
+          triggerId: trigger.id,
+          triggerName: trigger.name,
+        });
+        if (subagentId) error.subagentId = subagentId;
+        await this.notificationManager.addError(error);
+      }
+    }
+
+    // session_end: fire when isOngoing transitions true → false, with debounce.
+    // A debounce is required because isOngoing briefly becomes false between turns
+    // (after Claude responds, before the user sends the next message). We wait
+    // SESSION_END_DEBOUNCE_MS after the transition — if the session goes active again
+    // during that window, we cancel the pending notification.
+    if (sessionEndTriggers.length > 0) {
+      const isOngoing = checkMessagesOngoing(allMessages);
+      const previousOngoing = this.lastOngoingState.get(filePath);
+
+      if (isOngoing) {
+        // Session is active — cancel any pending session_end notification for this file
+        const existing = this.pendingSessionEndTimers.get(filePath);
+        if (existing) {
+          clearTimeout(existing);
+          this.pendingSessionEndTimers.delete(filePath);
+        }
+      } else if (previousOngoing === true) {
+        // Transitioned to not-ongoing — schedule notification after debounce window.
+        // Cancel any existing timer first (e.g., from a previous partial write).
+        const existing = this.pendingSessionEndTimers.get(filePath);
+        if (existing) {
+          clearTimeout(existing);
+        }
+
+        const lastOutput = extractLastAssistantText(allMessages);
+        const endMessage = lastOutput ?? 'Session completed';
+
+        const timer = setTimeout(() => {
+          this.pendingSessionEndTimers.delete(filePath);
+          // Confirm still not ongoing at fire time (guard against race)
+          if (this.lastOngoingState.get(filePath) === false && this.notificationManager) {
+            for (const trigger of sessionEndTriggers) {
+              const error = createDetectedError({
+                sessionId,
+                projectId,
+                filePath,
+                projectName,
+                lineNumber: allMessages.length,
+                source: 'session',
+                message: endMessage,
+                timestamp: now,
+                cwd,
+                triggerColor: trigger.color,
+                triggerId: trigger.id,
+                triggerName: trigger.name,
+              });
+              if (subagentId) error.subagentId = subagentId;
+              this.notificationManager.addError(error).catch((e) => {
+                logger.error('FileWatcher: Failed to add session_end notification:', e);
+              });
+            }
+          }
+        }, FileWatcher.SESSION_END_DEBOUNCE_MS);
+
+        this.pendingSessionEndTimers.set(filePath, timer);
+      }
+
+      this.lastOngoingState.set(filePath, isOngoing);
+    }
+  }
+
+  /**
    * Clears the error detection tracking for a specific file.
    * Call this when a file is deleted or to force re-processing.
    */
@@ -691,6 +889,12 @@ export class FileWatcher extends EventEmitter {
     this.lastProcessedLineCount.delete(filePath);
     this.lastProcessedSize.delete(filePath);
     this.activeSessionFiles.delete(filePath);
+    this.lastOngoingState.delete(filePath);
+    const timer = this.pendingSessionEndTimers.get(filePath);
+    if (timer) {
+      clearTimeout(timer);
+      this.pendingSessionEndTimers.delete(filePath);
+    }
   }
 
   /**
@@ -700,6 +904,11 @@ export class FileWatcher extends EventEmitter {
     this.lastProcessedLineCount.clear();
     this.lastProcessedSize.clear();
     this.activeSessionFiles.clear();
+    this.lastOngoingState.clear();
+    for (const timer of this.pendingSessionEndTimers.values()) {
+      clearTimeout(timer);
+    }
+    this.pendingSessionEndTimers.clear();
   }
 
   /**
