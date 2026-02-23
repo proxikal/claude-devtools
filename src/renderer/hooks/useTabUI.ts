@@ -48,6 +48,8 @@ interface UseTabUIReturn {
   savedScrollTop: number | undefined;
   saveScrollPosition: (scrollTop: number) => void;
   initializeTabUI: () => void;
+  isTaskSummaryExpanded: (aiGroupId: string) => boolean;
+  toggleTaskSummary: (aiGroupId: string) => void;
 }
 
 // =============================================================================
@@ -85,6 +87,7 @@ export function useTabUI(): UseTabUIReturn {
     setSelectedContextPhaseForTab,
     saveScrollPositionForTab,
     initTabUIState,
+    toggleTaskSummaryForTab,
   } = useStore(
     useShallow((s) => ({
       toggleAIGroupExpansionForTab: s.toggleAIGroupExpansionForTab,
@@ -97,6 +100,7 @@ export function useTabUI(): UseTabUIReturn {
       setSelectedContextPhaseForTab: s.setSelectedContextPhaseForTab,
       saveScrollPositionForTab: s.saveScrollPositionForTab,
       initTabUIState: s.initTabUIState,
+      toggleTaskSummaryForTab: s.toggleTaskSummaryForTab,
     }))
   );
 
@@ -215,6 +219,22 @@ export function useTabUI(): UseTabUIReturn {
     initTabUIState(tabId);
   }, [tabId, initTabUIState]);
 
+  // Task summary expansion - derive from tabState
+  const isTaskSummaryExpanded = useCallback(
+    (aiGroupId: string): boolean => {
+      return tabState?.expandedTaskSummaryIds.has(aiGroupId) ?? false;
+    },
+    [tabState]
+  );
+
+  const toggleTaskSummary = useCallback(
+    (aiGroupId: string): void => {
+      if (!tabId) return;
+      toggleTaskSummaryForTab(tabId, aiGroupId);
+    },
+    [tabId, toggleTaskSummaryForTab]
+  );
+
   return {
     // Current tab ID
     tabId,
@@ -248,5 +268,9 @@ export function useTabUI(): UseTabUIReturn {
 
     // Initialization
     initializeTabUI,
+
+    // Task summary expansion
+    isTaskSummaryExpanded,
+    toggleTaskSummary,
   };
 }
