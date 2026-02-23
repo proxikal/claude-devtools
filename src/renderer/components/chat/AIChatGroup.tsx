@@ -543,8 +543,10 @@ const AIChatGroupInner = ({
         />
       </div>
 
-      {/* Task Summary — collapsed row below output, shown when group has tool activity */}
-      {!(aiGroup.isOngoing ?? false) && <TaskSummary aiGroup={aiGroup} />}
+      {/* Task Summary — only on the last completed AI group in the session */}
+      {!(aiGroup.isOngoing ?? false) && (aiGroup.isLastGroup ?? false) && (
+        <TaskSummary aiGroup={aiGroup} displayItems={enhanced.displayItems} />
+      )}
     </div>
   );
 };

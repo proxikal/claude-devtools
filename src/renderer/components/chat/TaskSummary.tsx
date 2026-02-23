@@ -1,12 +1,13 @@
-import React from 'react';
+import React, { useState } from 'react';
 
 import { COLOR_TEXT_MUTED, COLOR_TEXT_SECONDARY } from '@renderer/constants/cssVariables';
 import { useTabUI } from '@renderer/hooks/useTabUI';
 import { formatDuration, formatTokensCompact } from '@renderer/utils/formatters';
-import { ChevronDown, Clock, Sigma, Zap } from 'lucide-react';
+import { getToolContextTokens } from '@renderer/utils/toolRendering';
+import { Check, ChevronDown, Clipboard, Clock, Sigma, Zap } from 'lucide-react';
 
 import type { Process } from '@renderer/types/data';
-import type { AIGroup } from '@renderer/types/groups';
+import type { AIGroup, AIGroupDisplayItem } from '@renderer/types/groups';
 
 // =============================================================================
 // Helpers
@@ -112,24 +113,126 @@ const SubagentRow = ({ process }: { process: Process }): React.JSX.Element => {
 };
 
 // =============================================================================
+// Digest Builder
+// =============================================================================
+
+/**
+ * Builds a compact structured text digest of the task — safe to paste to Claude
+ * for accuracy assessment without dumping full tool content.
+ */
+function buildTaskDigest(
+  aiGroup: AIGroup,
+  displayItems: AIGroupDisplayItem[],
+  toolCounts: ToolCount[],
+  totalTokens: number
+): string {
+  const lines: string[] = [];
+
+  const duration = aiGroup.durationMs > 0 ? formatDuration(aiGroup.durationMs) : null;
+  const totalTools = toolCounts.reduce((s, t) => s + t.count, 0);
+  const totalErrors = toolCounts.reduce((s, t) => s + t.errorCount, 0);
+
+  lines.push(
+    `Task Summary — ${totalTools} tool${totalTools !== 1 ? 's' : ''}${duration ? ` · ${duration}` : ''} · ${totalTokens.toLocaleString()} tokens`
+  );
+
+  // Per-tool-type token breakdown
+  if (toolCounts.length > 0) {
+    // Aggregate tokens per tool name from displayItems
+    const tokensByTool = new Map<string, number>();
+    for (const item of displayItems) {
+      if (item.type !== 'tool') continue;
+      const name = item.tool.name ?? 'Unknown';
+      tokensByTool.set(name, (tokensByTool.get(name) ?? 0) + getToolContextTokens(item.tool));
+    }
+    lines.push('');
+    lines.push('Tools:');
+    for (const { name, count, errorCount } of toolCounts) {
+      const t = tokensByTool.get(name) ?? 0;
+      const err = errorCount > 0 ? ` [${errorCount} error${errorCount !== 1 ? 's' : ''}]` : '';
+      lines.push(`  ${name} ×${count}: ${t.toLocaleString()} tokens${err}`);
+    }
+  }
+
+  // Thinking + output token totals
+  let thinkingTokens = 0;
+  let outputTokens = 0;
+  for (const item of displayItems) {
+    if (item.type === 'thinking') thinkingTokens += item.tokenCount ?? 0;
+    if (item.type === 'output') outputTokens += item.tokenCount ?? 0;
+  }
+  if (thinkingTokens > 0 || outputTokens > 0) {
+    lines.push('');
+    if (thinkingTokens > 0) lines.push(`Thinking: ${thinkingTokens.toLocaleString()} tokens`);
+    if (outputTokens > 0) lines.push(`Output text: ${outputTokens.toLocaleString()} tokens`);
+  }
+
+  // Subagents
+  if (aiGroup.processes.length > 0) {
+    lines.push('');
+    lines.push('Subagents:');
+    for (const proc of aiGroup.processes) {
+      const label = proc.subagentType ?? proc.description ?? proc.id.slice(0, 8);
+      const dur = proc.durationMs > 0 ? ` · ${formatDuration(proc.durationMs)}` : '';
+      const tok =
+        proc.metrics.totalTokens > 0
+          ? ` · ${proc.metrics.totalTokens.toLocaleString()} tokens`
+          : '';
+      lines.push(`  ${label}${dur}${tok}`);
+    }
+  }
+
+  lines.push('');
+  lines.push(
+    `Total: ${totalTokens.toLocaleString()} tokens${duration ? ` · ${duration}` : ''}${totalErrors > 0 ? ` · ${totalErrors} error${totalErrors !== 1 ? 's' : ''}` : ''}`
+  );
+
+  return lines.join('\n');
+}
+
+// =============================================================================
 // Main Component
 // =============================================================================
 
 interface TaskSummaryProps {
   aiGroup: AIGroup;
+  displayItems: AIGroupDisplayItem[];
 }
 
-export const TaskSummary = ({ aiGroup }: Readonly<TaskSummaryProps>): React.JSX.Element | null => {
+export const TaskSummary = ({
+  aiGroup,
+  displayItems,
+}: Readonly<TaskSummaryProps>): React.JSX.Element | null => {
   const { isTaskSummaryExpanded, toggleTaskSummary } = useTabUI();
   const isExpanded = isTaskSummaryExpanded(aiGroup.id);
+  const [copied, setCopied] = useState(false);
 
-  // Only show for completed groups with actual tool activity
   const toolCounts = buildToolCounts(aiGroup.steps);
   const subagents = aiGroup.processes;
   const totalTools = toolCounts.reduce((sum, t) => sum + t.count, 0);
   const totalErrors = toolCounts.reduce((sum, t) => sum + t.errorCount, 0);
 
-  if (totalTools === 0 && subagents.length === 0) return null;
+  // Sum tokens using the exact same sources as the per-step labels in the UI:
+  // - tool items: getToolContextTokens (callTokens + result.tokenCount)
+  // - thinking/output items: tokenCount
+  const totalTokens = displayItems.reduce((sum, item) => {
+    if (item.type === 'tool') return sum + getToolContextTokens(item.tool);
+    if (item.type === 'thinking' || item.type === 'output') return sum + (item.tokenCount ?? 0);
+    return sum;
+  }, 0);
+
+  // Nothing meaningful to show
+  if (totalTokens === 0 && totalTools === 0 && subagents.length === 0 && aiGroup.durationMs === 0)
+    return null;
+
+  const handleCopy = (e: React.MouseEvent): void => {
+    e.stopPropagation();
+    const digest = buildTaskDigest(aiGroup, displayItems, toolCounts, totalTokens);
+    void navigator.clipboard.writeText(digest).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  };
 
   // Collapsed header label
   const parts: string[] = [];
@@ -137,8 +240,6 @@ export const TaskSummary = ({ aiGroup }: Readonly<TaskSummaryProps>): React.JSX.
   if (subagents.length > 0)
     parts.push(`${subagents.length} subagent${subagents.length !== 1 ? 's' : ''}`);
   if (aiGroup.durationMs > 0) parts.push(formatDuration(aiGroup.durationMs));
-
-  const totalTokens = aiGroup.metrics.totalTokens;
 
   return (
     <div
@@ -185,8 +286,20 @@ export const TaskSummary = ({ aiGroup }: Readonly<TaskSummaryProps>): React.JSX.
             </span>
           </>
         )}
+        <button
+          type="button"
+          className="ml-auto mr-1 rounded p-0.5 opacity-40 transition-opacity hover:opacity-100"
+          title="Copy task digest"
+          onClick={handleCopy}
+        >
+          {copied ? (
+            <Check className="size-3" style={{ color: 'var(--tag-text)' }} />
+          ) : (
+            <Clipboard className="size-3" />
+          )}
+        </button>
         <ChevronDown
-          className={`ml-auto size-3 shrink-0 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+          className={`size-3 shrink-0 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
         />
       </div>
 

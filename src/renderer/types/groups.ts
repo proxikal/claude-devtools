@@ -358,6 +358,8 @@ export interface AIGroup {
   responses: ParsedMessage[];
   /** Whether this is the last AI group in an ongoing session */
   isOngoing?: boolean;
+  /** Whether this is the last AI group in the session (used to gate Task Summary display) */
+  isLastGroup?: boolean;
 }
 
 // =============================================================================

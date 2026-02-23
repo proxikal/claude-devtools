@@ -157,6 +157,20 @@ export function transformChunksToConversation(
     }
   }
 
+  // Mark the last 2 AI groups so TaskSummary persists when the user sends a new message.
+  // The current last group shows the summary for the active task; the second-to-last
+  // keeps it visible on the previous task so it doesn't disappear mid-conversation.
+  if (aiCount > 0) {
+    let marked = 0;
+    for (let i = items.length - 1; i >= 0 && marked < 2; i--) {
+      const item = items[i];
+      if (item.type === 'ai') {
+        (item.group as AIGroup & { isLastGroup?: boolean }).isLastGroup = true;
+        marked++;
+      }
+    }
+  }
+
   // If session is ongoing, mark the last AI group (but don't override interrupted status)
   if (isOngoing && aiCount > 0) {
     // Find the last AI item and mark it as ongoing

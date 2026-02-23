@@ -354,13 +354,35 @@ These were submitted as PRs and accepted into `matt1398/claude-devtools`:
 
 | Feature | PR | Description |
 |---|---|---|
-| Auto-expand AI response groups setting | [#59](https://github.com/matt1398/claude-devtools/pull/59) | Toggle to auto-expand AI response groups + per-tool expand modal |
+| Auto-expand AI response groups | [#59](https://github.com/matt1398/claude-devtools/pull/59) | Initial upstream PR — superseded locally by a more complete implementation (see below) |
 
 ---
 
 ### In This Fork — Not Yet PR'd 🔧
 
 These live on `main` (local) and `feat/project-analytics` in this fork. Not yet submitted upstream — either needs more polish or is waiting for the right moment.
+
+#### Auto-Expand Controls (merged into local `main`)
+
+Two independent auto-expand settings added to the General settings page:
+
+- **Auto-expand AI response groups** — when enabled, new AI response groups open expanded as they arrive during a live session, so you never miss what Claude is doing in real time. Expansion state is snapshotted before each live-refresh so new groups expand correctly without collapsing existing ones.
+- **Per-tool auto-expand** — a separate "Configure" modal lets you select exactly which tool types auto-expand their result cards (e.g. Read, Edit, Bash, Subagent). Each tool type is independently toggleable. Disabled tools remain collapsed by default; you still expand them manually.
+
+Both settings are persisted in `AppConfig` and wired through IPC.
+
+---
+
+#### Task Summary (merged into local `main`)
+
+A collapsible **Task Summary** row appears below every completed AI group that has tool activity. It gives you a compact, at-a-glance view of what the group actually did without opening every tool card:
+
+- **Tool pills** — one pill per tool type used, with call count and an error indicator if any call failed
+- **Subagent rows** — each spawned subagent listed with its type label, duration, and token count
+- **Footer** — total group duration and total token count
+- Collapse/expand state is per-tab via `tabUISlice`, matching the existing pattern for all other expandable UI elements
+
+---
 
 #### Usage Dashboard (merged into local `main`)
 
